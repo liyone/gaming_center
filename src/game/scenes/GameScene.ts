@@ -26,6 +26,18 @@ interface TowerPlacementValidator {
   getPosition(): { x: number, y: number }
 }
 
+// Interface for Projectile entity
+interface IProjectile {
+  update(time: number, delta: number): void
+  destroy(): void
+  getPosition(): { x: number, y: number }
+  getBounds(): Phaser.Geom.Rectangle
+  getDamage(): number
+  isAlive(): boolean
+  hitPigeon(pigeon: IPigeon): boolean
+  checkCollisionWith(target: { x: number, y: number, radius: number }): boolean
+}
+
 export default class GameScene extends Phaser.Scene {
   private background!: Phaser.GameObjects.Graphics
   private titleText!: Phaser.GameObjects.Text
@@ -35,9 +47,11 @@ export default class GameScene extends Phaser.Scene {
   // Game entities
   private pigeons: IPigeon[] = []
   private towers: ITower[] = []
+  private projectiles: IProjectile[] = []
   private spawnTimer: Phaser.Time.TimerEvent | null = null
   private PigeonClass: new (scene: Phaser.Scene, x: number, y: number) => IPigeon | null = null
   private TowerClass: new (scene: Phaser.Scene, x: number, y: number) => ITower | null = null
+  private ProjectileClass: new (scene: Phaser.Scene, startX: number, startY: number, targetX: number, targetY: number, damage: number) => IProjectile | null = null
   
   // Game state
   private playerHealth: number = 10
@@ -91,8 +105,8 @@ export default class GameScene extends Phaser.Scene {
     // Set up input handling
     this.setupInput()
     
-    // Set up pigeon management
-    this.setupPigeonEvents()
+    // Set up game events
+    this.setupGameEvents()
     
     // Start pigeon spawning
     this.startPigeonSpawning()
@@ -105,11 +119,13 @@ export default class GameScene extends Phaser.Scene {
     try {
       const { default: Pigeon } = await import('../entities/Pigeon')
       const { default: Tower } = await import('../entities/Tower')
+      const { default: Projectile } = await import('../entities/Projectile')
       
       this.PigeonClass = Pigeon as new (scene: Phaser.Scene, x: number, y: number) => IPigeon
       this.TowerClass = Tower as new (scene: Phaser.Scene, x: number, y: number) => ITower
+      this.ProjectileClass = Projectile as new (scene: Phaser.Scene, startX: number, startY: number, targetX: number, targetY: number, damage: number) => IProjectile
       
-      console.log('GameScene: Game classes loaded successfully')
+      console.log('GameScene: All game classes loaded successfully')
     } catch (error) {
       console.error('GameScene: Failed to load game classes:', error)
     }
@@ -252,6 +268,7 @@ export default class GameScene extends Phaser.Scene {
             `💰 Coins: ${this.coins}\n` +
             `🐦 Pigeons: ${this.pigeons.length}\n` +
             `🏰 Towers: ${this.towers.length}${placementStatus}\n` +
+            `🚀 Projectiles: ${this.projectiles.length}\n` +
             `⚡ Status: ${this.isGameActive ? 'Active' : 'Game Over'}`
           )
         }
@@ -260,7 +277,7 @@ export default class GameScene extends Phaser.Scene {
     })
     
     // Debug info
-    this.add.text(10, 150, 'MVP 1.0 - Core Proof of Concept\nTower Placement & Pigeon Entities', {
+    this.add.text(10, 160, 'MVP 1.0 - Core Proof of Concept\nTowers, Pigeons & Projectiles', {
       fontSize: '12px',
       color: '#ffffff',
       backgroundColor: '#000000',
@@ -455,6 +472,35 @@ export default class GameScene extends Phaser.Scene {
     console.log('Tower placed at', x, y, 'Cost:', towerCost)
   }
 
+  private handleTowerFire(fireData: {
+    tower: ITower,
+    startPosition: { x: number, y: number },
+    targetPosition: { x: number, y: number },
+    damage: number
+  }): void {
+    if (!this.ProjectileClass) {
+      console.log('Projectile class not loaded yet')
+      return
+    }
+
+    console.log('Tower fired! Creating projectile:', fireData)
+
+    // Create new projectile
+    const projectile = new this.ProjectileClass(
+      this,
+      fireData.startPosition.x,
+      fireData.startPosition.y,
+      fireData.targetPosition.x,
+      fireData.targetPosition.y,
+      fireData.damage
+    )
+
+    this.projectiles.push(projectile)
+
+    // Update status
+    this.statusText.setText(`Tower fired! Projectile created (${this.projectiles.length} active)`)
+  }
+
   private showWelcomeMessage(): void {
     // Temporary welcome message that fades out
     const welcomeMsg = this.add.text(400, 400, 'Main Game Scene Loaded!\nCanvas and Rendering Active', {
@@ -476,7 +522,7 @@ export default class GameScene extends Phaser.Scene {
     })
   }
 
-  private setupPigeonEvents(): void {
+  private setupGameEvents(): void {
     // Listen for pigeon events
     this.events.on('pigeonEscaped', (pigeon: IPigeon) => {
       this.handlePigeonEscape(pigeon)
@@ -484,6 +530,16 @@ export default class GameScene extends Phaser.Scene {
     
     this.events.on('pigeonEliminated', (pigeon: IPigeon) => {
       this.handlePigeonElimination(pigeon)
+    })
+    
+    // Listen for tower firing events
+    this.events.on('towerFired', (fireData: {
+      tower: ITower,
+      startPosition: { x: number, y: number },
+      targetPosition: { x: number, y: number },
+      damage: number
+    }) => {
+      this.handleTowerFire(fireData)
     })
   }
 
@@ -613,7 +669,50 @@ export default class GameScene extends Phaser.Scene {
       }
     })
     
+    // Update all projectiles
+    this.projectiles.forEach(projectile => {
+      projectile.update(time, delta)
+    })
+    
+    // Handle projectile-pigeon collisions
+    this.handleProjectileCollisions()
+    
     // Remove dead pigeons that have finished their elimination animation
     this.pigeons = this.pigeons.filter(pigeon => pigeon.isAlive)
+    
+    // Remove inactive projectiles
+    this.projectiles = this.projectiles.filter(projectile => projectile.isAlive())
+  }
+
+  private handleProjectileCollisions(): void {
+    // Check each projectile against each pigeon
+    for (const projectile of this.projectiles) {
+      if (!projectile.isAlive()) continue
+      
+      for (const pigeon of this.pigeons) {
+        if (!pigeon.isAlive) continue
+        
+        // Check collision using projectile's collision method
+        const pigeonPos = pigeon.getPosition()
+        const collision = projectile.checkCollisionWith({
+          x: pigeonPos.x,
+          y: pigeonPos.y,
+          radius: 12 // Pigeon collision radius
+        })
+        
+        if (collision) {
+          // Projectile hits pigeon
+          const eliminated = projectile.hitPigeon(pigeon)
+          
+          if (eliminated) {
+            // Pigeon was eliminated, trigger elimination event
+            this.handlePigeonElimination(pigeon)
+          }
+          
+          // Only one collision per projectile per frame
+          break
+        }
+      }
+    }
   }
 }

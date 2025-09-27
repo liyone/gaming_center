@@ -11,11 +11,11 @@ Each milestone builds a **playable game** that you can test and validate before 
 - `package.json` - ✅ Added Phaser.js dependency (v3.85.2)
 - `src/app/game/page.tsx` - ✅ Main game page component with beautiful UI and Phaser integration
 - `src/components/Game/PhaserGame.tsx` - ✅ React wrapper for Phaser game instance with proper cleanup and GameScene integration
-- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with pigeon spawning, tower placement, currency system, and combat logic  
-- `src/game/entities/Pigeon.ts` - ✅ Pigeon entity class with curved path movement, health system, and visual effects
-- `src/game/entities/Tower.ts` - ✅ Tower entity class with click placement, range visualization, targeting system, and attack logic
+- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with pigeon spawning, tower placement, projectile management, collision detection, and complete combat system
+- `src/game/entities/Pigeon.ts` - ✅ Pigeon entity class with curved path movement, health system, damage handling, and visual effects
+- `src/game/entities/Tower.ts` - ✅ Tower entity class with click placement, range visualization, targeting system, and projectile firing
+- `src/game/entities/Projectile.ts` - ✅ Projectile entity with physics movement, collision detection, visual effects, and damage application
 - `src/game/scenes/MenuScene.ts` - Menu and card collection scenes
-- `src/game/entities/Projectile.ts` - Projectile entity for tower attacks
 - `src/game/systems/WaveManager.ts` - Wave spawning and difficulty progression
 - `src/game/systems/CardSystem.ts` - Card collection and gacha mechanics
 - `src/game/data/towers.json` - Tower definitions and stats
@@ -40,10 +40,10 @@ Each milestone builds a **playable game** that you can test and validate before 
   - [x] 1.3 Set up main game scene with canvas and basic rendering
   - [x] 1.4 Create pigeon entity that moves across screen horizontally
   - [x] 1.5 Create basic tower entity that can be placed by clicking
-  - [ ] 1.6 Implement projectile shooting from tower to pigeon
-  - [ ] 1.7 Add collision detection between projectiles and pigeons
-  - [ ] 1.8 Add simple scoring when pigeons are eliminated
-  - [ ] 1.9 Create basic game over condition when pigeons reach end
+  - [x] 1.6 Implement projectile shooting from tower to pigeon
+  - [x] 1.7 Add collision detection between projectiles and pigeons
+  - [x] 1.8 Add simple scoring when pigeons are eliminated
+  - [x] 1.9 Create basic game over condition when pigeons reach end
   - [ ] 1.10 Test and validate: Is the core shooting mechanic satisfying?
 
 - [ ] **MVP 2.0: Enhanced Tower Defense** *(Validate: "Is the strategy engaging?")*
