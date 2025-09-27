@@ -66,6 +66,15 @@ export default class GameScene extends Phaser.Scene {
   private coins: number = 300 // Starting currency for towers
   private isGameActive: boolean = true
   
+  // Wave system
+  private currentWave: number = 1
+  private pigeonsInWave: number = 0
+  private pigeonsSpawned: number = 0
+  private pigeonSpawnTimer: Phaser.Time.TimerEvent | null = null
+  private waveState: 'preparing' | 'spawning' | 'active' | 'complete' = 'preparing'
+  private timeBetweenWaves: number = 10000 // 10 seconds between waves
+  private waveStartTimer: Phaser.Time.TimerEvent | null = null
+  
   // Tower placement
   private isPlacingTower: boolean = false
   private placementPreview: Phaser.GameObjects.Graphics | null = null
@@ -127,8 +136,8 @@ export default class GameScene extends Phaser.Scene {
     // Set up game events
     this.setupGameEvents()
     
-    // Start pigeon spawning
-    this.startPigeonSpawning()
+    // Start wave system
+    this.startWaveSystem()
     
     // Add welcome message
     this.showWelcomeMessage()
@@ -268,7 +277,7 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5)
     
     // Initialize simple status
-    this.statusText.setText('Press SPACE to spawn pigeons | Press T to place towers | Hover towers to see range')
+    this.statusText.setText('Wave System Active! Press T to place towers | SPACE to skip waves | Hover towers to see range')
     
     // Game stats UI
     const gameStatsText = this.add.text(10, 10, '', {
@@ -284,10 +293,12 @@ export default class GameScene extends Phaser.Scene {
       callback: () => {
         if (gameStatsText && this.isGameActive) {
           const placementStatus = this.isPlacingTower ? ' (PLACING TOWER)' : ''
+          const waveStatus = this.getWaveStatusText()
           gameStatsText.setText(
             `❤️ Health: ${this.playerHealth}\n` +
             `🎯 Score: ${this.score}\n` +
             `💰 Coins: ${this.coins}\n` +
+            `🌊 Wave: ${this.currentWave} ${waveStatus}\n` +
             `🐦 Pigeons: ${this.pigeons.length}\n` +
             `🏰 Towers: ${this.towers.length}${placementStatus}\n` +
             `🚀 Projectiles: ${this.projectiles.length}\n` +
@@ -302,7 +313,7 @@ export default class GameScene extends Phaser.Scene {
     })
     
     // Debug info
-    this.add.text(10, 160, 'MVP 1.0 - Core Proof of Concept\nTowers, Pigeons & Projectiles', {
+    this.add.text(10, 180, 'MVP 2.0 - Enhanced Tower Defense\nWave System & Predictive Targeting', {
       fontSize: '12px',
       color: '#ffffff',
       backgroundColor: '#000000',
@@ -516,11 +527,21 @@ export default class GameScene extends Phaser.Scene {
       // Prepare for future keyboard controls
     }
     
-    // Add spacebar for manual pigeon spawning
+    // Add spacebar for manual wave progression (for testing)
     const spaceKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
     if (spaceKey) {
       spaceKey.on('down', () => {
-        this.spawnPigeon()
+        if (this.waveState === 'complete' || this.waveState === 'preparing') {
+          // Skip to next wave immediately
+          if (this.waveStartTimer) {
+            this.waveStartTimer.destroy()
+            this.waveStartTimer = null
+          }
+          this.currentWave++
+          this.waveState = 'preparing'
+          this.startWave()
+          this.statusText.setText('Wave skipped manually!')
+        }
       })
     }
     
@@ -938,21 +959,124 @@ export default class GameScene extends Phaser.Scene {
     })
   }
 
-  private startPigeonSpawning(): void {
-    // Start automatic pigeon spawning every 3 seconds
-    this.spawnTimer = this.time.addEvent({
-      delay: 3000, // 3 seconds
+  private startWaveSystem(): void {
+    console.log('🌊 Starting wave system')
+    this.waveState = 'preparing'
+    this.startWave()
+  }
+
+  private startWave(): void {
+    console.log(`🌊 Starting Wave ${this.currentWave}`)
+    
+    // Calculate pigeons in this wave (increases with wave number)
+    this.pigeonsInWave = Math.floor(3 + (this.currentWave * 1.5))
+    this.pigeonsSpawned = 0
+    this.waveState = 'spawning'
+    
+    // Show wave start message
+    this.showWaveStartMessage()
+    
+    // Start spawning pigeons for this wave
+    const spawnDelay = Math.max(1000, 3000 - (this.currentWave * 100)) // Faster spawning in later waves
+    
+    this.pigeonSpawnTimer = this.time.addEvent({
+      delay: spawnDelay,
       callback: () => {
-        if (this.isGameActive) {
+        if (this.waveState === 'spawning' && this.pigeonsSpawned < this.pigeonsInWave && this.isGameActive) {
           this.spawnPigeon()
+          this.pigeonsSpawned++
+          
+          // If all pigeons spawned, switch to active state
+          if (this.pigeonsSpawned >= this.pigeonsInWave) {
+            this.waveState = 'active'
+            this.pigeonSpawnTimer?.destroy()
+            this.pigeonSpawnTimer = null
+            console.log(`🌊 Wave ${this.currentWave} spawning complete - ${this.pigeonsSpawned} pigeons spawned`)
+          }
         }
       },
       loop: true
     })
+  }
+
+  private checkWaveComplete(): void {
+    if (this.waveState === 'active' && this.pigeons.length === 0) {
+      this.completeWave()
+    }
+  }
+
+  private completeWave(): void {
+    console.log(`🎉 Wave ${this.currentWave} completed!`)
+    this.waveState = 'complete'
     
-    // Spawn first pigeon immediately
-    this.time.delayedCall(1000, () => {
-      this.spawnPigeon()
+    // Award bonus coins for completing the wave
+    const waveBonus = 25 + (this.currentWave * 10)
+    this.coins += waveBonus
+    
+    // Show completion message
+    this.showWaveCompleteMessage(waveBonus)
+    
+    // Prepare next wave after delay
+    this.waveStartTimer = this.time.delayedCall(this.timeBetweenWaves, () => {
+      this.currentWave++
+      this.waveState = 'preparing'
+      this.startWave()
+    })
+  }
+
+  private getWaveStatusText(): string {
+    switch (this.waveState) {
+      case 'preparing':
+        return '(Preparing...)'
+      case 'spawning':
+        return `(Spawning ${this.pigeonsSpawned}/${this.pigeonsInWave})`
+      case 'active':
+        return '(In Progress)'
+      case 'complete':
+        return '(Complete!)'
+      default:
+        return ''
+    }
+  }
+
+  private showWaveStartMessage(): void {
+    const waveMessage = this.add.text(400, 350, `🌊 Wave ${this.currentWave} Starting!\n${this.pigeonsInWave} Pigeons Incoming`, {
+      fontSize: '24px',
+      color: '#ffffff',
+      backgroundColor: '#1A202C',
+      padding: { x: 20, y: 10 },
+      align: 'center'
+    }).setOrigin(0.5)
+    
+    // Animate the message
+    this.tweens.add({
+      targets: waveMessage,
+      alpha: 0,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 3000,
+      ease: 'Power2',
+      onComplete: () => waveMessage.destroy()
+    })
+  }
+
+  private showWaveCompleteMessage(bonus: number): void {
+    const completeMessage = this.add.text(400, 350, `🎉 Wave ${this.currentWave} Complete!\nBonus: +${bonus} coins`, {
+      fontSize: '20px',
+      color: '#68D391',
+      backgroundColor: '#1A202C',
+      padding: { x: 15, y: 8 },
+      align: 'center'
+    }).setOrigin(0.5)
+    
+    // Animate the message
+    this.tweens.add({
+      targets: completeMessage,
+      alpha: 0,
+      y: 320,
+      duration: 4000,
+      ease: 'Power2',
+      onComplete: () => completeMessage.destroy()
     })
   }
 
@@ -971,8 +1095,7 @@ export default class GameScene extends Phaser.Scene {
     // Start the pigeon moving
     pigeon.startMoving()
     
-    // Update status
-    this.statusText.setText(`New pigeon spawned! Total: ${this.pigeons.length}`)
+    console.log(`🐦 Pigeon spawned for Wave ${this.currentWave} (${this.pigeonsSpawned}/${this.pigeonsInWave})`)
   }
 
   private handlePigeonEscape(pigeon: IPigeon): void {
@@ -1019,14 +1142,24 @@ export default class GameScene extends Phaser.Scene {
     
     this.isGameActive = false
     
-    // Stop spawning
+    // Stop all wave spawning
     if (this.spawnTimer) {
       this.spawnTimer.destroy()
       this.spawnTimer = null
     }
     
+    if (this.pigeonSpawnTimer) {
+      this.pigeonSpawnTimer.destroy()
+      this.pigeonSpawnTimer = null
+    }
+    
+    if (this.waveStartTimer) {
+      this.waveStartTimer.destroy()
+      this.waveStartTimer = null
+    }
+    
     // Show game over message
-    this.add.text(400, 350, 'GAME OVER!\nAll pigeons have invaded!', {
+    this.add.text(400, 350, `GAME OVER!\nYou survived ${this.currentWave} waves!`, {
       fontSize: '36px',
       color: '#ff0000',
       backgroundColor: '#000000',
@@ -1035,11 +1168,12 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5)
     
     // Add restart instructions
-    this.add.text(400, 450, 'Refresh the page to play again', {
+    this.add.text(400, 450, `Final Score: ${this.score} points\nRefresh the page to play again`, {
       fontSize: '18px',
       color: '#ffffff',
       backgroundColor: '#000000',
-      padding: { x: 12, y: 6 }
+      padding: { x: 12, y: 6 },
+      align: 'center'
     }).setOrigin(0.5)
   }
 
@@ -1078,6 +1212,9 @@ export default class GameScene extends Phaser.Scene {
     
     // Remove inactive projectiles
     this.projectiles = this.projectiles.filter(projectile => projectile.isAlive())
+    
+    // Check if wave is complete
+    this.checkWaveComplete()
   }
 
   private handleProjectileCollisions(): void {
