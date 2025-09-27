@@ -4,10 +4,10 @@ import { useState } from 'react'
 import PhaserGame from '@/components/Game/PhaserGame'
 
 export default function GamePage() {
-  const [gameInstance, setGameInstance] = useState<any>(null)
+  const [gameInstance, setGameInstance] = useState<Phaser.Game | null>(null)
   const [isGameReady, setIsGameReady] = useState(false)
 
-  const handleGameReady = (game: any) => {
+  const handleGameReady = (game: Phaser.Game) => {
     setGameInstance(game)
     setIsGameReady(true)
     console.log('Phaser game initialized:', game)

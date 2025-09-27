@@ -10,11 +10,11 @@ Each milestone builds a **playable game** that you can test and validate before 
 
 - `package.json` - ✅ Added Phaser.js dependency (v3.85.2)
 - `src/app/game/page.tsx` - ✅ Main game page component with beautiful UI and Phaser integration
-- `src/components/Game/PhaserGame.tsx` - ✅ React wrapper for Phaser game instance with proper cleanup
-- `src/game/scenes/GameScene.ts` - Main gameplay scene with tower defense logic
+- `src/components/Game/PhaserGame.tsx` - ✅ React wrapper for Phaser game instance with proper cleanup and GameScene integration
+- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with pigeon spawning, path following, and game state management
+- `src/game/entities/Pigeon.ts` - ✅ Pigeon entity class with curved path movement, health system, and visual effects
 - `src/game/scenes/MenuScene.ts` - Menu and card collection scenes
 - `src/game/entities/Tower.ts` - Tower entity class with attack logic
-- `src/game/entities/Pigeon.ts` - Pigeon entity class with movement and health
 - `src/game/entities/Projectile.ts` - Projectile entity for tower attacks
 - `src/game/systems/WaveManager.ts` - Wave spawning and difficulty progression
 - `src/game/systems/CardSystem.ts` - Card collection and gacha mechanics
@@ -37,8 +37,8 @@ Each milestone builds a **playable game** that you can test and validate before 
 - [ ] **MVP 1.0: Core Proof of Concept** *(Validate: "Is shooting pigeons fun?")*
   - [x] 1.1 Install Phaser.js and configure Next.js integration
   - [x] 1.2 Create basic game page and Phaser wrapper component
-  - [ ] 1.3 Set up main game scene with canvas and basic rendering
-  - [ ] 1.4 Create pigeon entity that moves across screen horizontally
+  - [x] 1.3 Set up main game scene with canvas and basic rendering
+  - [x] 1.4 Create pigeon entity that moves across screen horizontally
   - [ ] 1.5 Create basic tower entity that can be placed by clicking
   - [ ] 1.6 Implement projectile shooting from tower to pigeon
   - [ ] 1.7 Add collision detection between projectiles and pigeons

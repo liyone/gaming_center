@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 
 interface PhaserGameProps {
-  onGameReady?: (game: any) => void
+  onGameReady?: (game: Phaser.Game) => void
 }
 
 export default function PhaserGame({ onGameReady }: PhaserGameProps) {
   const gameRef = useRef<HTMLDivElement>(null)
-  const phaserGameRef = useRef<any>(null)
+  const phaserGameRef = useRef<Phaser.Game | null>(null)
   const [isClient, setIsClient] = useState(false)
 
   useEffect(() => {
@@ -20,13 +20,14 @@ export default function PhaserGame({ onGameReady }: PhaserGameProps) {
 
     const loadPhaserAndCreateGame = async () => {
       const Phaser = await import('phaser')
+      const { default: GameScene } = await import('@/game/scenes/GameScene')
       
       const config: Phaser.Types.Core.GameConfig = {
         type: Phaser.AUTO,
         width: 800,
         height: 600,
         parent: gameRef.current,
-        backgroundColor: '#2c3e50',
+        backgroundColor: '#87CEEB', // Sky blue background
         physics: {
           default: 'arcade',
           arcade: {
@@ -34,25 +35,10 @@ export default function PhaserGame({ onGameReady }: PhaserGameProps) {
             debug: false
           }
         },
-        scene: {
-          preload: function() {
-            // Placeholder preload - will be replaced with proper scenes
-            this.load.image('placeholder', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
-          },
-          create: function() {
-            // Basic scene setup - will be replaced with proper game scene
-            this.add.text(400, 300, 'Pigeon Tower Defense\nGame Ready!', {
-              fontSize: '32px',
-              color: '#ffffff',
-              align: 'center'
-            }).setOrigin(0.5)
-            
-            this.add.text(400, 400, 'Phaser.js Integration Complete!', {
-              fontSize: '16px',
-              color: '#ecf0f1',
-              align: 'center'
-            }).setOrigin(0.5)
-          }
+        scene: [GameScene], // Use the proper GameScene class
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
         }
       }
 
