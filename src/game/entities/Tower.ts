@@ -1,3 +1,6 @@
+import * as Phaser from 'phaser'
+import { SkillCardSystem, SkillCard, CombinedSkillEffects } from '../systems/SkillCardSystem'
+
 interface TowerConfig {
   id: string
   name: string
@@ -27,11 +30,11 @@ export default class Tower {
   public towerType: string
   private config: TowerConfig
   
-  // Upgrade tracking
-  public damageLevel: number = 0
-  public rangeLevel: number = 0
-  public fireRateLevel: number = 0
-  private maxUpgradeLevel: number = 3
+  // Skill system
+  private equippedSkills: SkillCard[] = []
+  private combinedEffects: CombinedSkillEffects | null = null
+  private maxSkillSlots: number = 4 // 1 active + 3 support
+  private skillCardSystem: SkillCardSystem | null = null
   
   // Visual properties
   private readonly TOWER_SIZE = 16
@@ -41,9 +44,10 @@ export default class Tower {
   private lastFireTime: number = 0
   private isShowingRange: boolean = false
 
-  constructor(scene: Phaser.Scene, x: number, y: number, towerType: string = 'basic') {
+  constructor(scene: Phaser.Scene, x: number, y: number, towerType: string = 'basic', skillCardSystem?: SkillCardSystem) {
     this.scene = scene
     this.towerType = towerType
+    this.skillCardSystem = skillCardSystem || null
     
     // Load tower configuration
     this.config = this.loadTowerConfig(towerType)
@@ -53,6 +57,9 @@ export default class Tower {
     this.range = this.config.range
     this.fireRate = this.config.fireRate
     this.cost = this.config.cost
+    
+    // Initialize with default basic shot skill
+    this.initializeDefaultSkills()
     
     // Create tower sprite
     this.createSprite(x, y)
@@ -67,6 +74,108 @@ export default class Tower {
     this.createRangeIndicator()
     
     console.log(`${this.config.name} created at`, x, y)
+  }
+  
+  private initializeDefaultSkills(): void {
+    if (this.skillCardSystem) {
+      const defaultSkill = this.skillCardSystem.getDefaultActiveSkill()
+      if (defaultSkill) {
+        this.equippedSkills.push(defaultSkill)
+        this.recalculateStats()
+      }
+    }
+  }
+  
+  // Skill management methods
+  public canEquipSkill(skill: SkillCard): boolean {
+    // Can't equip the same skill twice
+    if (this.equippedSkills.some(s => s.id === skill.id)) {
+      return false
+    }
+    
+    // For active skills, we can always equip (will replace existing active)
+    if (skill.type === 'active') {
+      return true
+    }
+    
+    // For support skills, check if we have room (excluding active skill slot)
+    const supportSkillCount = this.equippedSkills.filter(s => s.type === 'support').length
+    return supportSkillCount < (this.maxSkillSlots - 1) // Reserve 1 slot for active skill
+  }
+  
+  public equipSkill(skill: SkillCard): boolean {
+    if (!this.canEquipSkill(skill)) {
+      return false
+    }
+    
+    // If equipping a new active skill, replace the current one
+    if (skill.type === 'active') {
+      this.equippedSkills = this.equippedSkills.filter(s => s.type !== 'active')
+    }
+    
+    this.equippedSkills.push(skill)
+    this.recalculateStats()
+    this.updateSprite()
+    
+    console.log(`🔧 Equipped skill: ${skill.name} to tower`)
+    return true
+  }
+  
+  public removeSkill(skillId: string): boolean {
+    const skillToRemove = this.equippedSkills.find(s => s.id === skillId)
+    if (!skillToRemove) return false
+    
+    this.equippedSkills = this.equippedSkills.filter(s => s.id !== skillId)
+    this.recalculateStats()
+    this.updateSprite()
+    
+    console.log(`🔧 Removed skill: ${skillToRemove.name} from tower`)
+    return true
+  }
+  
+  public unequipSkill(skillId: string): SkillCard | null {
+    const skillToUnequip = this.equippedSkills.find(s => s.id === skillId)
+    if (!skillToUnequip) return null
+    
+    this.equippedSkills = this.equippedSkills.filter(s => s.id !== skillId)
+    this.recalculateStats()
+    this.updateSprite()
+    
+    console.log(`🔄 Unequipped skill: ${skillToUnequip.name} from tower`)
+    return skillToUnequip
+  }
+  
+  public getEquippedSkills(): SkillCard[] {
+    return [...this.equippedSkills]
+  }
+  
+  public getAvailableSkillSlots(): number {
+    return this.maxSkillSlots - this.equippedSkills.length
+  }
+  
+  private recalculateStats(): void {
+    if (!this.skillCardSystem) return
+    
+    // Get base stats from tower config
+    const baseStats = {
+      damage: this.config.damage,
+      range: this.config.range,
+      fireRate: this.config.fireRate
+    }
+    
+    // Combine skills to get final effects
+    this.combinedEffects = this.skillCardSystem.combineSkills(this.equippedSkills, baseStats)
+    
+    // Apply combined effects to tower stats
+    this.damage = Math.floor(this.combinedEffects.finalDamage)
+    this.range = Math.floor(this.combinedEffects.finalRange)
+    this.fireRate = Math.floor(this.combinedEffects.finalFireRate)
+    
+    console.log(`🔧 Tower stats recalculated: Damage=${this.damage}, Range=${this.range}, FireRate=${this.fireRate}`)
+  }
+  
+  public getCombinedEffects(): CombinedSkillEffects | null {
+    return this.combinedEffects
   }
 
   private loadTowerConfig(towerType: string): TowerConfig {
@@ -176,49 +285,59 @@ export default class Tower {
     // Draw tower type indicator based on type
     this.drawTowerTypeIndicator()
     
-    // Draw upgrade indicators around the tower
-    if (this.damageLevel > 0) {
-      // Red spikes for damage upgrades
-      this.sprite.fillStyle(0xFF4444, 0.8)
-      for (let i = 0; i < this.damageLevel; i++) {
-        const angle = (Math.PI * 2 / 3) * i - Math.PI / 2
-        const x = Math.cos(angle) * 18
-        const y = Math.sin(angle) * 18
-        this.sprite.fillTriangle(x, y, x - 3, y + 6, x + 3, y + 6)
-      }
-    }
+    // Draw skill indicators around the tower
+    this.drawSkillIndicators()
     
-    if (this.rangeLevel > 0) {
-      // Blue circles for range upgrades
-      this.sprite.lineStyle(1, 0x4444FF, 0.6)
-      for (let i = 0; i < this.rangeLevel; i++) {
-        this.sprite.strokeCircle(0, 0, this.TOWER_SIZE + 4 + (i * 3))
-      }
-    }
+    // Draw targeting reticle (small cross at center)
+    this.sprite.lineStyle(1, 0xF7FAFC, 0.8)
+    this.sprite.lineBetween(-3, 0, 3, 0)
+    this.sprite.lineBetween(0, -3, 0, 3)
+  }
+  
+  private drawSkillIndicators(): void {
+    if (this.equippedSkills.length === 0) return
     
-    if (this.fireRateLevel > 0) {
-      // Yellow lightning bolts for fire rate upgrades
-      this.sprite.fillStyle(0xFFFF44, 0.8)
-      for (let i = 0; i < this.fireRateLevel; i++) {
-        const angle = (Math.PI * 2 / 3) * i + Math.PI / 6
-        const x = Math.cos(angle) * 20
-        const y = Math.sin(angle) * 20
-        // Simple lightning bolt shape
-        this.sprite.fillTriangle(x, y - 3, x - 2, y + 3, x + 2, y + 3)
-      }
-    }
-
-    // Draw central level indicator if any upgrades
-    const totalUpgrades = this.damageLevel + this.rangeLevel + this.fireRateLevel
-    if (totalUpgrades > 0) {
-      this.sprite.fillStyle(0xFFD700, 1) // Gold
-      this.sprite.fillCircle(0, 0, 6)
-      this.sprite.fillStyle(0x000000, 1) // Black text
+    // Draw skill gems around the tower
+    const skillPositions = [
+      { x: -20, y: -20 }, // Top-left
+      { x: 20, y: -20 },  // Top-right  
+      { x: -20, y: 20 },  // Bottom-left
+      { x: 20, y: 20 }    // Bottom-right
+    ]
+    
+    this.equippedSkills.forEach((skill, index) => {
+      if (index >= skillPositions.length) return
       
-      // Simple level display (total upgrade count)
-      const levelText = this.scene.add.text(this.sprite.x, this.sprite.y, totalUpgrades.toString(), {
+      const pos = skillPositions[index]
+      const colorHex = skill.color.replace('#', '0x')
+      const color = parseInt(colorHex, 16)
+      
+      // Draw skill gem
+      this.sprite.fillStyle(color, 0.8)
+      this.sprite.fillCircle(pos.x, pos.y, 4)
+      
+      // Add border based on skill type
+      if (skill.type === 'active') {
+        this.sprite.lineStyle(2, 0xFFD700, 1) // Gold border for active skills
+        this.sprite.strokeCircle(pos.x, pos.y, 4)
+      } else {
+        this.sprite.lineStyle(1, 0xFFFFFF, 0.8) // White border for support skills
+        this.sprite.strokeCircle(pos.x, pos.y, 4)
+      }
+    })
+    
+    // Draw central level indicator showing skill count
+    if (this.equippedSkills.length > 0) {
+      this.sprite.fillStyle(0x1A202C, 0.8) // Dark background
+      this.sprite.fillCircle(0, 0, 6)
+      this.sprite.lineStyle(1, 0xFFD700, 1) // Gold border
+      this.sprite.strokeCircle(0, 0, 6)
+      
+      // Show skill count
+      const skillCount = this.equippedSkills.length
+      const levelText = this.scene.add.text(this.sprite.x, this.sprite.y, skillCount.toString(), {
         fontSize: '8px',
-        color: '#000000',
+        color: '#FFD700',
         fontStyle: 'bold'
       }).setOrigin(0.5)
       
@@ -227,11 +346,6 @@ export default class Tower {
         if (levelText) levelText.destroy()
       })
     }
-    
-    // Draw targeting reticle (small cross at center)
-    this.sprite.lineStyle(1, 0xF7FAFC, 0.8)
-    this.sprite.lineBetween(-3, 0, 3, 0)
-    this.sprite.lineBetween(0, -3, 0, 3)
   }
 
   private drawTowerTypeIndicator(): void {
@@ -498,95 +612,6 @@ export default class Tower {
     return this.config.projectileColor
   }
 
-  // Upgrade system methods
-  public canUpgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean {
-    switch (upgradeType) {
-      case 'damage':
-        return this.damageLevel < this.maxUpgradeLevel
-      case 'range':
-        return this.rangeLevel < this.maxUpgradeLevel
-      case 'fireRate':
-        return this.fireRateLevel < this.maxUpgradeLevel
-      default:
-        return false
-    }
-  }
-
-  public getUpgradeCost(upgradeType: 'damage' | 'range' | 'fireRate'): number {
-    const currentLevel = this.getUpgradeLevel(upgradeType)
-    const baseCost = Math.floor(this.config.cost * 0.75) // 75% of original tower cost
-    return Math.floor(baseCost * Math.pow(1.5, currentLevel)) // Exponential cost increase
-  }
-
-  public getUpgradeLevel(upgradeType: 'damage' | 'range' | 'fireRate'): number {
-    switch (upgradeType) {
-      case 'damage':
-        return this.damageLevel
-      case 'range':
-        return this.rangeLevel
-      case 'fireRate':
-        return this.fireRateLevel
-      default:
-        return 0
-    }
-  }
-
-  public upgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean {
-    if (!this.canUpgrade(upgradeType)) return false
-
-    const upgradeBonus = 0.25 // 25% improvement per level
-
-    switch (upgradeType) {
-      case 'damage':
-        this.damageLevel++
-        this.damage = Math.floor(this.config.damage * (1 + upgradeBonus * this.damageLevel))
-        break
-      case 'range':
-        this.rangeLevel++
-        this.range = Math.floor(this.config.range * (1 + upgradeBonus * this.rangeLevel))
-        break
-      case 'fireRate':
-        this.fireRateLevel++
-        this.fireRate = Math.max(200, Math.floor(this.config.fireRate * (1 - upgradeBonus * this.fireRateLevel * 0.5))) // Faster = lower number
-        break
-    }
-
-    // Update visual level
-    this.level = 1 + this.damageLevel + this.rangeLevel + this.fireRateLevel
-    this.updateSprite()
-
-    console.log(`🔧 Tower upgraded! ${upgradeType} level ${this.getUpgradeLevel(upgradeType)}`)
-    return true
-  }
-
-  public getUpgradeInfo(): { 
-    damage: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
-    range: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
-    fireRate: { level: number, cost: number, canUpgrade: boolean, nextValue: number }
-  } {
-    const upgradeBonus = 0.25
-
-    return {
-      damage: {
-        level: this.damageLevel,
-        cost: this.getUpgradeCost('damage'),
-        canUpgrade: this.canUpgrade('damage'),
-        nextValue: Math.floor(this.config.damage * (1 + upgradeBonus * (this.damageLevel + 1)))
-      },
-      range: {
-        level: this.rangeLevel,
-        cost: this.getUpgradeCost('range'),
-        canUpgrade: this.canUpgrade('range'),
-        nextValue: Math.floor(this.config.range * (1 + upgradeBonus * (this.rangeLevel + 1)))
-      },
-      fireRate: {
-        level: this.fireRateLevel,
-        cost: this.getUpgradeCost('fireRate'),
-        canUpgrade: this.canUpgrade('fireRate'),
-        nextValue: Math.max(200, Math.floor(this.config.fireRate * (1 - upgradeBonus * (this.fireRateLevel + 1) * 0.5)))
-      }
-    }
-  }
 
   // Static method to get all available tower types
   public static getAvailableTowerTypes(): TowerConfig[] {

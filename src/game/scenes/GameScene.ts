@@ -1,3 +1,5 @@
+import { SkillCardSystem, SkillCard } from '../systems/SkillCardSystem'
+
 // Interface for Pigeon entity to avoid using 'any'
 interface IPigeon {
   isAlive: boolean
@@ -27,14 +29,13 @@ interface ITower {
   findTarget(pigeons: IPigeon[]): { x: number, y: number } | null
   attack(targetPosition: { x: number, y: number }, currentTime: number): void
   canAttack(currentTime: number): boolean
-  canUpgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean
-  getUpgradeCost(upgradeType: 'damage' | 'range' | 'fireRate'): number
-  upgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean
-  getUpgradeInfo(): { 
-    damage: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
-    range: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
-    fireRate: { level: number, cost: number, canUpgrade: boolean, nextValue: number }
-  }
+  canEquipSkill(skill: any): boolean
+  equipSkill(skill: any): boolean
+  removeSkill(skillId: string): boolean
+  unequipSkill(skillId: string): any
+  getEquippedSkills(): any[]
+  getAvailableSkillSlots(): number
+  getCombinedEffects(): any
 }
 
 // Interface for placement validation
@@ -66,7 +67,7 @@ export default class GameScene extends Phaser.Scene {
   private projectiles: IProjectile[] = []
   private spawnTimer: Phaser.Time.TimerEvent | null = null
   private PigeonClass: (new (scene: Phaser.Scene, x: number, y: number) => IPigeon) | null = null
-  private TowerClass: (new (scene: Phaser.Scene, x: number, y: number, towerType?: string) => ITower) | null = null
+  private TowerClass: (new (scene: Phaser.Scene, x: number, y: number, towerType?: string, skillCardSystem?: SkillCardSystem) => ITower) | null = null
   private ProjectileClass: (new (scene: Phaser.Scene, startX: number, startY: number, targetX: number, targetY: number, damage: number, color?: number) => IProjectile) | null = null
   
   // Game state
@@ -88,21 +89,23 @@ export default class GameScene extends Phaser.Scene {
   private isPlacingTower: boolean = false
   private placementPreview: Phaser.GameObjects.Graphics | null = null
   private currentTowerType: string = 'basic'
-  private availableTowerTypes: string[] = ['basic', 'rapidFire', 'heavyDamage', 'sniper']
-  private currentTowerTypeIndex: number = 0
   
-  // Tower selection UI
-  private towerSelectorPanel: Phaser.GameObjects.Graphics | null = null
-  private towerSelectorIcons: Phaser.GameObjects.Graphics[] = []
-  private towerSelectorTexts: Phaser.GameObjects.Text[] = []
-  private selectedIndicator: Phaser.GameObjects.Graphics | null = null
+  // Card hand UI
+  private cardHandPanel: Phaser.GameObjects.Graphics | null = null
+  private cardHandTexts: Phaser.GameObjects.Text[] = []
+  private cardHandButtons: Phaser.GameObjects.Graphics[] = []
   
-  // Tower upgrade UI
-  private upgradePanel: Phaser.GameObjects.Graphics | null = null
-  private upgradeTexts: Phaser.GameObjects.Text[] = []
-  private upgradeButtons: Phaser.GameObjects.Graphics[] = []
+  // Skill card system
+  private skillCardSystem: SkillCardSystem | null = null
+  private playerHand: SkillCard[] = []
+  private skillCardDrawn: boolean = false
+  
+  // Skill UI
+  private skillPanel: Phaser.GameObjects.Graphics | null = null
+  private skillTexts: Phaser.GameObjects.Text[] = []
+  private skillButtons: Phaser.GameObjects.Graphics[] = []
   private selectedTower: ITower | null = null
-  private isUpgradeMenuOpen: boolean = false
+  private isSkillMenuOpen: boolean = false
   
   // Game world properties
   private readonly WORLD_WIDTH = 800
@@ -140,11 +143,14 @@ export default class GameScene extends Phaser.Scene {
     // Create the path for pigeons to follow
     this.createPigeonPath()
     
+    // Initialize skill card system
+    this.skillCardSystem = new SkillCardSystem(this)
+    
     // Create UI elements
     this.createUI()
     
-    // Create tower selection UI
-    this.createTowerSelectorUI()
+    // Create card hand UI
+    this.createCardHandUI()
     
     // Set up input handling
     this.setupInput()
@@ -293,7 +299,7 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5)
     
     // Initialize simple status
-    this.statusText.setText('Wave System Active! Click towers to upgrade | Press T to place | SPACE to skip waves')
+    this.statusText.setText('Wave System Active! Click towers for skills | Press T to place | SPACE to skip waves')
     
     // Game stats UI
     const gameStatsText = this.add.text(10, 10, '', {
@@ -321,15 +327,13 @@ export default class GameScene extends Phaser.Scene {
             `⚡ Status: ${this.isGameActive ? 'Active' : 'Game Over'}`
           )
           
-          // Update tower selector affordability
-          this.updateTowerSelection()
         }
       },
       loop: true
     })
     
     // Debug info
-    this.add.text(10, 180, 'MVP 2.0+ - Enhanced Tower Defense\nWave System, Upgrades & Predictive Targeting', {
+    this.add.text(10, 180, 'Enhanced Tower Defense + Skill Cards\nPath of Exile-Inspired Skill System', {
       fontSize: '12px',
       color: '#ffffff',
       backgroundColor: '#000000',
@@ -337,86 +341,6 @@ export default class GameScene extends Phaser.Scene {
     })
   }
 
-  private createTowerSelectorUI(): void {
-    // Create background panel for tower selector
-    this.towerSelectorPanel = this.add.graphics()
-    this.towerSelectorPanel.fillStyle(0x000000, 0.8)
-    this.towerSelectorPanel.fillRoundedRect(520, 10, 270, 140, 8)
-    
-    // Panel border
-    this.towerSelectorPanel.lineStyle(2, 0x4A5568, 1)
-    this.towerSelectorPanel.strokeRoundedRect(520, 10, 270, 140, 8)
-    
-    // Title
-    this.add.text(655, 25, 'Tower Selection', {
-      fontSize: '16px',
-      color: '#ffffff',
-      fontStyle: 'bold'
-    }).setOrigin(0.5)
-    
-    // Create tower icons and info
-    const configs = this.getTowerConfigs()
-    const startX = 540
-    const startY = 50
-    const iconSpacing = 60
-    
-    for (let i = 0; i < this.availableTowerTypes.length; i++) {
-      const towerType = this.availableTowerTypes[i]
-      const config = configs[towerType]
-      const x = startX + (i * iconSpacing)
-      const y = startY
-      
-      // Create tower icon
-      const icon = this.add.graphics()
-      this.drawTowerIcon(icon, x, y, towerType, config)
-      this.towerSelectorIcons.push(icon)
-      
-      // Add click interaction to icon
-      icon.setInteractive(new Phaser.Geom.Rectangle(x - 25, y - 25, 50, 50), Phaser.Geom.Rectangle.Contains)
-      icon.on('pointerdown', () => {
-        this.selectTowerType(i)
-      })
-      
-      // Hover effects
-      icon.on('pointerover', () => {
-        icon.setScale(1.1)
-      })
-      icon.on('pointerout', () => {
-        icon.setScale(1.0)
-      })
-      
-      // Tower cost and stats
-      const costText = this.add.text(x, y + 35, `${config.cost}c`, {
-        fontSize: '12px',
-        color: '#ffffff',
-        backgroundColor: '#2D3748',
-        padding: { x: 4, y: 2 }
-      }).setOrigin(0.5)
-      
-      const statsText = this.add.text(x, y + 50, `${config.damage}dmg`, {
-        fontSize: '10px',
-        color: '#A0AEC0'
-      }).setOrigin(0.5)
-      
-      const keyText = this.add.text(x, y + 65, `[${i + 1}]`, {
-        fontSize: '10px',
-        color: '#68D391',
-        fontStyle: 'bold'
-      }).setOrigin(0.5)
-      
-      this.towerSelectorTexts.push(costText, statsText, keyText)
-    }
-    
-    // Create selection indicator
-    this.selectedIndicator = this.add.graphics()
-    this.updateTowerSelection()
-    
-    // Instructions
-    this.add.text(655, 125, 'Q: Cycle | 1-4: Select | T: Place', {
-      fontSize: '11px',
-      color: '#A0AEC0'
-    }).setOrigin(0.5)
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private drawTowerIcon(graphics: Phaser.GameObjects.Graphics, x: number, y: number, towerType: string, _config: unknown): void {
@@ -486,45 +410,6 @@ export default class GameScene extends Phaser.Scene {
     return (r << 16) | (g << 8) | b
   }
 
-  private updateTowerSelection(): void {
-    if (!this.selectedIndicator) return
-    
-    this.selectedIndicator.clear()
-    
-    // Draw selection ring around current tower
-    const startX = 540
-    const startY = 50
-    const iconSpacing = 60
-    const selectedX = startX + (this.currentTowerTypeIndex * iconSpacing)
-    const selectedY = startY
-    
-    // Animated selection ring
-    this.selectedIndicator.lineStyle(3, 0x68D391, 1)
-    this.selectedIndicator.strokeCircle(selectedX, selectedY, 18)
-    
-    // Add selection glow
-    this.selectedIndicator.lineStyle(1, 0x68D391, 0.3)
-    this.selectedIndicator.strokeCircle(selectedX, selectedY, 22)
-    
-    // Update cost colors for all towers based on affordability
-    const configs = this.getTowerConfigs()
-    
-    for (let i = 0; i < this.availableTowerTypes.length; i++) {
-      const towerType = this.availableTowerTypes[i]
-      const config = configs[towerType]
-      const costTextIndex = i * 3 // Each tower has 3 text elements (cost, stats, key)
-      
-      if (this.towerSelectorTexts.length > costTextIndex) {
-        const costText = this.towerSelectorTexts[costTextIndex]
-        
-        if (this.coins >= config.cost) {
-          costText.setStyle({ color: '#68D391' }) // Green if affordable
-        } else {
-          costText.setStyle({ color: '#F56565' }) // Red if too expensive
-        }
-      }
-    }
-  }
 
   private setupInput(): void {
     // Add click handling for tower placement and general interaction
@@ -573,47 +458,23 @@ export default class GameScene extends Phaser.Scene {
     const escKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
     if (escKey) {
       escKey.on('down', () => {
-        if (this.isUpgradeMenuOpen) {
-          this.closeUpgradeMenu()
+        if (this.isSkillMenuOpen) {
+          this.closeSkillMenu()
         } else {
           this.cancelTowerPlacement()
         }
       })
     }
     
-    // Add Q key to cycle through tower types
-    const qKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.Q)
-    if (qKey) {
-      qKey.on('down', () => {
-        this.cycleTowerType()
-      })
-    }
-    
-    // Add number keys 1-4 for direct tower type selection
-    const oneKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ONE)
-    const twoKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.TWO)
-    const threeKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.THREE)
-    const fourKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR)
-    
-    if (oneKey) {
-      oneKey.on('down', () => {
-        this.selectTowerType(0)
-      })
-    }
-    if (twoKey) {
-      twoKey.on('down', () => {
-        this.selectTowerType(1)
-      })
-    }
-    if (threeKey) {
-      threeKey.on('down', () => {
-        this.selectTowerType(2)
-      })
-    }
-    if (fourKey) {
-      fourKey.on('down', () => {
-        this.selectTowerType(3)
-      })
+    // Add number keys for quick card application (when tower is selected)
+    for (let i = 1; i <= 9; i++) {
+      const keyCode = `DIGIT_${i}` as any
+      const key = this.input.keyboard?.addKey(keyCode)
+      if (key) {
+        key.on('down', () => {
+          this.quickApplyCard(i - 1) // 0-indexed
+        })
+      }
     }
   }
 
@@ -623,16 +484,16 @@ export default class GameScene extends Phaser.Scene {
       return
     }
     
-    // Check if clicking on a tower for upgrades
+    // Check if clicking on a tower for skill application
     const clickedTower = this.findTowerAtPosition(x, y)
     if (clickedTower) {
-      this.selectTowerForUpgrade(clickedTower)
+      this.selectTowerForSkills(clickedTower)
       return
     }
     
-    // Close upgrade menu if clicking elsewhere
-    if (this.isUpgradeMenuOpen) {
-      this.closeUpgradeMenu()
+    // Close skill menu if clicking elsewhere
+    if (this.isSkillMenuOpen) {
+      this.closeSkillMenu()
       return
     }
     
@@ -652,9 +513,201 @@ export default class GameScene extends Phaser.Scene {
     })
     
     // Update status
-    this.statusText.setText(`Click towers to upgrade them! Press T to place new towers.`)
+    this.statusText.setText(`Click towers to apply skills! Press T to place new towers. Hand: ${this.playerHand.length} cards`)
     
     console.log('GameScene: Click detected at', x, y)
+  }
+
+  private createCardHandUI(): void {
+    // Create persistent card hand panel at bottom of screen - make it bigger and more prominent
+    this.cardHandPanel = this.add.graphics()
+    this.cardHandPanel.fillStyle(0x0F1419, 0.95)
+    this.cardHandPanel.lineStyle(3, 0xFFD700, 1)
+    this.cardHandPanel.fillRoundedRect(5, 480, 790, 110, 12)
+    this.cardHandPanel.strokeRoundedRect(5, 480, 790, 110, 12)
+    
+    // Add glow effect
+    this.cardHandPanel.lineStyle(1, 0xFFD700, 0.3)
+    this.cardHandPanel.strokeRoundedRect(2, 477, 796, 116, 15)
+    
+    // Header text - bigger and more prominent
+    const headerText = this.add.text(400, 495, '🎴 SKILL CARDS 🎴', {
+      fontSize: '18px',
+      color: '#FFD700',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5)
+    this.cardHandTexts.push(headerText)
+    
+    // Instruction text
+    const instructionText = this.add.text(400, 515, 'Click cards to select → Click towers to apply | Number keys 1-9 for quick use', {
+      fontSize: '12px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5)
+    this.cardHandTexts.push(instructionText)
+    
+    // Initial empty hand message
+    this.updateCardHandDisplay()
+  }
+
+  private updateCardHandDisplay(): void {
+    // Clear existing card displays (keep header and instructions)
+    const toKeep = this.cardHandTexts.slice(0, 2)
+    this.cardHandTexts.slice(2).forEach(text => text.destroy())
+    this.cardHandButtons.forEach(button => button.destroy())
+    this.cardHandTexts = toKeep
+    this.cardHandButtons = []
+    
+    if (this.playerHand.length === 0) {
+      const emptyText = this.add.text(400, 560, 'Complete waves to draw skill cards!', {
+        fontSize: '16px',
+        color: '#A0AEC0',
+        fontStyle: 'bold'
+      }).setOrigin(0.5)
+      this.cardHandTexts.push(emptyText)
+      return
+    }
+    
+    // Display cards in hand - much bigger and more obvious
+    this.playerHand.forEach((card, index) => {
+      if (index >= 6) return // Show up to 6 cards
+      
+      const cardWidth = 110
+      const cardHeight = 45
+      const cardSpacing = 125
+      const startX = 400 - ((this.playerHand.length - 1) * cardSpacing / 2)
+      const cardX = startX + (index * cardSpacing)
+      const cardY = 555
+      
+      // Create card background with rarity-based styling
+      const cardBg = this.add.graphics()
+      const colorHex = card.color.replace('#', '0x')
+      const color = parseInt(colorHex, 16)
+      
+      // Card background with gradient effect
+      cardBg.fillStyle(0x1A202C, 0.9)
+      cardBg.fillRoundedRect(cardX - cardWidth/2, cardY - cardHeight/2, cardWidth, cardHeight, 8)
+      
+      // Colored border based on rarity
+      let borderWidth = 2
+      if (card.rarity === 'rare') borderWidth = 3
+      if (card.rarity === 'legendary') borderWidth = 4
+      
+      cardBg.lineStyle(borderWidth, color, 1)
+      cardBg.strokeRoundedRect(cardX - cardWidth/2, cardY - cardHeight/2, cardWidth, cardHeight, 8)
+      
+      // Add glow effect for higher rarities
+      if (card.rarity === 'rare' || card.rarity === 'legendary') {
+        cardBg.lineStyle(1, color, 0.3)
+        cardBg.strokeRoundedRect(cardX - cardWidth/2 - 2, cardY - cardHeight/2 - 2, cardWidth + 4, cardHeight + 4, 10)
+      }
+      
+      // Make card interactive with better hover effects
+      cardBg.setInteractive(new Phaser.Geom.Rectangle(cardX - cardWidth/2, cardY - cardHeight/2, cardWidth, cardHeight), Phaser.Geom.Rectangle.Contains)
+      cardBg.on('pointerover', () => {
+        // Scale up on hover
+        cardBg.setScale(1.1)
+        this.showCardTooltip(card, cardX, cardY - 60)
+      })
+      cardBg.on('pointerout', () => {
+        cardBg.setScale(1.0)
+        this.hideCardTooltip()
+      })
+      cardBg.on('pointerdown', () => {
+        this.selectCardFromHand(index)
+      })
+      
+      this.cardHandButtons.push(cardBg)
+      
+      // Card type icon
+      const typeIcon = this.getCardTypeIcon(card)
+      const iconText = this.add.text(cardX, cardY - 12, typeIcon, {
+        fontSize: '16px',
+        color: card.color
+      }).setOrigin(0.5)
+      this.cardHandTexts.push(iconText)
+      
+      // Card name text - bigger and more readable
+      const cardText = this.add.text(cardX, cardY + 5, card.name, {
+        fontSize: '10px',
+        color: '#FFFFFF',
+        fontStyle: 'bold',
+        wordWrap: { width: cardWidth - 10 }
+      }).setOrigin(0.5)
+      this.cardHandTexts.push(cardText)
+      
+      // Card number for quick access - more prominent
+      const numberText = this.add.text(cardX - cardWidth/2 + 8, cardY - cardHeight/2 + 5, (index + 1).toString(), {
+        fontSize: '14px',
+        color: '#FFD700',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 2
+      })
+      this.cardHandTexts.push(numberText)
+      
+      // Selected indicator
+      if (this.selectedCardIndex === index) {
+        const selectIndicator = this.add.graphics()
+        selectIndicator.lineStyle(4, 0x00FF00, 1)
+        selectIndicator.strokeRoundedRect(cardX - cardWidth/2 - 4, cardY - cardHeight/2 - 4, cardWidth + 8, cardHeight + 8, 12)
+        this.cardHandButtons.push(selectIndicator)
+      }
+    })
+  }
+
+  private getCardTypeIcon(card: SkillCard): string {
+    switch (card.id) {
+      case 'fireball': return '🔥'
+      case 'ice_shard': return '❄️'
+      case 'lightning_bolt': return '⚡'
+      case 'multiple_projectiles': return '🎯'
+      case 'piercing': return '🗡️'
+      case 'faster_attacks': return '💨'
+      case 'concentrated_effect': return '💥'
+      case 'increased_area': return '🌐'
+      case 'elemental_focus': return '🔮'
+      default: return '🎴'
+    }
+  }
+
+  private selectedCardIndex: number = -1
+  private cardTooltip: Phaser.GameObjects.Text | null = null
+
+  private selectCardFromHand(index: number): void {
+    this.selectedCardIndex = index
+    const card = this.playerHand[index]
+    if (card) {
+      this.statusText.setText(`🎴 Selected: ${card.name} - Click a tower to apply this skill`)
+      // Update display to show selection
+      this.updateCardHandDisplay()
+    }
+  }
+
+  private quickApplyCard(index: number): void {
+    if (index < this.playerHand.length && this.selectedTower) {
+      const card = this.playerHand[index]
+      this.equipSkillToTower(card)
+    }
+  }
+
+  private showCardTooltip(card: SkillCard, x: number, y: number): void {
+    this.hideCardTooltip()
+    this.cardTooltip = this.add.text(x, y, `${card.name}\n${card.description}\nType: ${card.type}`, {
+      fontSize: '10px',
+      color: '#ffffff',
+      backgroundColor: '#1A202C',
+      padding: { x: 8, y: 4 }
+    }).setOrigin(0.5)
+  }
+
+  private hideCardTooltip(): void {
+    if (this.cardTooltip) {
+      this.cardTooltip.destroy()
+      this.cardTooltip = null
+    }
   }
 
   private findTowerAtPosition(x: number, y: number): ITower | null {
@@ -692,8 +745,8 @@ export default class GameScene extends Phaser.Scene {
   private startTowerPlacement(): void {
     console.log('Starting tower placement mode')
     
-    // Close upgrade menu if open
-    this.closeUpgradeMenu()
+    // Close skill menu if open
+    this.closeSkillMenu()
     
     // Create placement preview
     this.placementPreview = this.add.graphics()
@@ -884,7 +937,7 @@ export default class GameScene extends Phaser.Scene {
     }
     
     // Create new tower with selected type
-    const tower = new this.TowerClass(this, x, y, this.currentTowerType)
+    const tower = new this.TowerClass(this, x, y, this.currentTowerType, this.skillCardSystem || undefined)
     this.towers.push(tower)
     
     // Deduct cost
@@ -900,158 +953,252 @@ export default class GameScene extends Phaser.Scene {
     console.log('Tower placed at', x, y, 'Cost:', towerCost)
   }
 
-  private selectTowerForUpgrade(tower: ITower): void {
+  private selectTowerForSkills(tower: ITower): void {
     this.selectedTower = tower
-    this.showUpgradeMenu()
-    this.statusText.setText(`${tower.getTowerName()} selected - Choose upgrade or click elsewhere to close`)
+    
+    // If a card is selected from hand, apply it immediately
+    if (this.selectedCardIndex >= 0 && this.selectedCardIndex < this.playerHand.length) {
+      const card = this.playerHand[this.selectedCardIndex]
+      this.equipSkillToTower(card)
+      this.selectedCardIndex = -1
+      return
+    }
+    
+    // Otherwise show skill menu
+    this.showSkillMenu()
+    this.statusText.setText(`${tower.getTowerName()} selected - Choose skills or click elsewhere to close`)
   }
 
-  private showUpgradeMenu(): void {
+  private showSkillMenu(): void {
     if (!this.selectedTower) return
     
-    this.closeUpgradeMenu() // Close any existing menu
-    this.isUpgradeMenuOpen = true
+    this.closeSkillMenu() // Close any existing menu
+    this.isSkillMenuOpen = true
     
     const towerPos = this.selectedTower.getPosition()
-    const upgradeInfo = this.selectedTower.getUpgradeInfo()
+    const equippedSkills = this.selectedTower.getEquippedSkills()
+    const availableSlots = this.selectedTower.getAvailableSkillSlots()
     
-    // Create upgrade panel
-    this.upgradePanel = this.add.graphics()
-    this.upgradePanel.fillStyle(0x1A202C, 0.95)
-    this.upgradePanel.lineStyle(2, 0x4A5568, 1)
-    this.upgradePanel.fillRoundedRect(towerPos.x - 100, towerPos.y - 120, 200, 180, 8)
-    this.upgradePanel.strokeRoundedRect(towerPos.x - 100, towerPos.y - 120, 200, 180, 8)
+    // Create skill panel - bigger to accommodate unequip buttons
+    this.skillPanel = this.add.graphics()
+    this.skillPanel.fillStyle(0x1A202C, 0.95)
+    this.skillPanel.lineStyle(2, 0x4A5568, 1)
+    this.skillPanel.fillRoundedRect(towerPos.x - 180, towerPos.y - 180, 360, 280, 8)
+    this.skillPanel.strokeRoundedRect(towerPos.x - 180, towerPos.y - 180, 360, 280, 8)
     
     // Tower name header
-    const headerText = this.add.text(towerPos.x, towerPos.y - 100, this.selectedTower.getTowerName(), {
+    const headerText = this.add.text(towerPos.x, towerPos.y - 130, this.selectedTower.getTowerName(), {
       fontSize: '14px',
       color: '#ffffff',
       fontStyle: 'bold'
     }).setOrigin(0.5)
-    this.upgradeTexts.push(headerText)
+    this.skillTexts.push(headerText)
     
-    // Current stats
-    const statsText = this.add.text(towerPos.x, towerPos.y - 85, 
-      `Damage: ${this.selectedTower.getDamage()} | Range: ${this.selectedTower.getRange()} | Rate: ${this.selectedTower.getFireRate()}ms`, {
+    // Current stats and equipped skills
+    const statsText = this.add.text(towerPos.x, towerPos.y - 115, 
+      `Damage: ${this.selectedTower.getDamage()} | Range: ${this.selectedTower.getRange()} | Slots: ${availableSlots}`, {
       fontSize: '10px',
       color: '#A0AEC0'
     }).setOrigin(0.5)
-    this.upgradeTexts.push(statsText)
+    this.skillTexts.push(statsText)
     
-    // Create upgrade buttons
-    const upgradeTypes: Array<'damage' | 'range' | 'fireRate'> = ['damage', 'range', 'fireRate']
-    const upgradeLabels = ['💥 Damage', '🎯 Range', '⚡ Speed']
-    
-    upgradeTypes.forEach((upgradeType, index) => {
-      const info = upgradeInfo[upgradeType]
-      const buttonY = towerPos.y - 50 + (index * 30)
-      
-      // Create upgrade button
-      const button = this.add.graphics()
-      const canAfford = this.coins >= info.cost
-      const canUpgrade = info.canUpgrade && canAfford
-      
-      const buttonColor = canUpgrade ? 0x38A169 : 0x4A5568
-      const textColor = canUpgrade ? '#ffffff' : '#A0AEC0'
-      
-      button.fillStyle(buttonColor, 1)
-      button.lineStyle(1, 0x2D3748, 1)
-      button.fillRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
-      button.strokeRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
-      
-      if (canUpgrade) {
-        button.setInteractive(new Phaser.Geom.Rectangle(towerPos.x - 90, buttonY - 8, 180, 16), Phaser.Geom.Rectangle.Contains)
-        button.on('pointerdown', () => this.purchaseUpgrade(upgradeType))
-        button.on('pointerover', () => {
-          button.clear()
-          button.fillStyle(0x48BB78, 1)
-          button.lineStyle(1, 0x2D3748, 1)
-          button.fillRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
-          button.strokeRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
-        })
-        button.on('pointerout', () => {
-          button.clear()
-          button.fillStyle(0x38A169, 1)
-          button.lineStyle(1, 0x2D3748, 1)
-          button.fillRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
-          button.strokeRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
-        })
-      }
-      
-      this.upgradeButtons.push(button)
-      
-      // Button text
-      const buttonText = info.canUpgrade 
-        ? `${upgradeLabels[index]} Lv.${info.level + 1} - ${info.cost}c (${info.nextValue})`
-        : `${upgradeLabels[index]} MAX`
-      
-      const text = this.add.text(towerPos.x, buttonY, buttonText, {
-        fontSize: '10px',
-        color: textColor
+    // Show equipped skills with unequip buttons
+    if (equippedSkills.length > 0) {
+      const equippedText = this.add.text(towerPos.x, towerPos.y - 100, 'Equipped Skills (Click to Unequip):', {
+        fontSize: '12px',
+        color: '#68D391',
+        fontStyle: 'bold'
       }).setOrigin(0.5)
-      this.upgradeTexts.push(text)
-    })
+      this.skillTexts.push(equippedText)
+      
+      equippedSkills.forEach((skill, index) => {
+        const skillY = towerPos.y - 85 + (index * 20)
+        
+        // Create unequip button for each equipped skill
+        const unequipButton = this.add.graphics()
+        unequipButton.fillStyle(0xE53E3E, 1) // Red background
+        unequipButton.lineStyle(1, 0xFFFFFF, 1)
+        unequipButton.fillRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+        unequipButton.strokeRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+        
+        // Make button interactive
+        unequipButton.setInteractive(new Phaser.Geom.Rectangle(towerPos.x - 120, skillY - 8, 240, 16), Phaser.Geom.Rectangle.Contains)
+        unequipButton.on('pointerdown', () => this.unequipSkillFromTower(skill.id))
+        unequipButton.on('pointerover', () => {
+          unequipButton.clear()
+          unequipButton.fillStyle(0xFF6B6B, 1) // Lighter red on hover
+          unequipButton.lineStyle(1, 0xFFFFFF, 1)
+          unequipButton.fillRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+          unequipButton.strokeRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+        })
+        unequipButton.on('pointerout', () => {
+          unequipButton.clear()
+          unequipButton.fillStyle(0xE53E3E, 1)
+          unequipButton.lineStyle(1, 0xFFFFFF, 1)
+          unequipButton.fillRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+          unequipButton.strokeRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+        })
+        
+        this.skillButtons.push(unequipButton)
+        
+        // Skill text with type icon
+        const typeIcon = this.getCardTypeIcon({ id: skill.id } as SkillCard)
+        const skillText = this.add.text(towerPos.x, skillY, `${typeIcon} ${skill.name} (${skill.type}) - Click to Unequip`, {
+          fontSize: '10px',
+          color: '#FFFFFF',
+          fontStyle: 'bold'
+        }).setOrigin(0.5)
+        this.skillTexts.push(skillText)
+      })
+    }
     
-    // Close instruction
-    const closeText = this.add.text(towerPos.x, towerPos.y + 50, 'Click elsewhere to close', {
+    // Show available skills from hand
+    if (this.playerHand.length > 0 && availableSlots > 0) {
+      const handHeaderY = towerPos.y - 85 + (equippedSkills.length * 20) + 15
+      const handText = this.add.text(towerPos.x, handHeaderY, 'Available Skills from Hand:', {
+        fontSize: '12px',
+        color: '#FFD700',
+        fontStyle: 'bold'
+      }).setOrigin(0.5)
+      this.skillTexts.push(handText)
+      
+      // Show up to 4 skills from hand
+      const skillsToShow = this.playerHand.slice(0, 4)
+      skillsToShow.forEach((skill, index) => {
+        const buttonY = handHeaderY + 15 + (index * 25)
+        
+        // Create skill button
+        const button = this.add.graphics()
+        const canEquip = this.selectedTower?.canEquipSkill(skill) || false
+        
+        const buttonColor = canEquip ? 0x38A169 : 0x4A5568
+        const textColor = canEquip ? '#ffffff' : '#A0AEC0'
+        
+        button.fillStyle(buttonColor, 1)
+        button.lineStyle(1, 0x2D3748, 1)
+        button.fillRoundedRect(towerPos.x - 140, buttonY - 8, 280, 16, 4)
+        button.strokeRoundedRect(towerPos.x - 140, buttonY - 8, 280, 16, 4)
+        
+        if (canEquip) {
+          button.setInteractive(new Phaser.Geom.Rectangle(towerPos.x - 140, buttonY - 8, 280, 16), Phaser.Geom.Rectangle.Contains)
+          button.on('pointerdown', () => this.equipSkillToTower(skill))
+          button.on('pointerover', () => {
+            button.clear()
+            button.fillStyle(0x48BB78, 1)
+            button.lineStyle(1, 0x2D3748, 1)
+            button.fillRoundedRect(towerPos.x - 140, buttonY - 8, 280, 16, 4)
+            button.strokeRoundedRect(towerPos.x - 140, buttonY - 8, 280, 16, 4)
+          })
+          button.on('pointerout', () => {
+            button.clear()
+            button.fillStyle(0x38A169, 1)
+            button.lineStyle(1, 0x2D3748, 1)
+            button.fillRoundedRect(towerPos.x - 140, buttonY - 8, 280, 16, 4)
+            button.strokeRoundedRect(towerPos.x - 140, buttonY - 8, 280, 16, 4)
+          })
+        }
+        
+        this.skillButtons.push(button)
+        
+        // Button text
+        const buttonText = `${skill.name} (${skill.type}) - ${skill.description}`
+        const text = this.add.text(towerPos.x, buttonY, buttonText, {
+          fontSize: '9px',
+          color: textColor
+        }).setOrigin(0.5)
+        this.skillTexts.push(text)
+      })
+    } else if (availableSlots === 0) {
+      const noSlotsText = this.add.text(towerPos.x, towerPos.y + 10, 'Tower is fully equipped!', {
+        fontSize: '12px',
+        color: '#FF6B6B'
+      }).setOrigin(0.5)
+      this.skillTexts.push(noSlotsText)
+    } else {
+      const noCardsText = this.add.text(towerPos.x, towerPos.y + 10, 'No skill cards in hand. Complete waves to draw cards!', {
+        fontSize: '11px',
+        color: '#A0AEC0'
+      }).setOrigin(0.5)
+      this.skillTexts.push(noCardsText)
+    }
+    
+    // Close instruction and future features note
+    const closeText = this.add.text(towerPos.x, towerPos.y + 70, 'Click elsewhere to close', {
       fontSize: '9px',
       color: '#718096'
     }).setOrigin(0.5)
-    this.upgradeTexts.push(closeText)
+    this.skillTexts.push(closeText)
+    
+    // Future combinations note
+    const comboNote = this.add.text(towerPos.x, towerPos.y + 85, '🔮 Skill Combinations Coming Soon!', {
+      fontSize: '8px',
+      color: '#9F7AEA',
+      fontStyle: 'italic'
+    }).setOrigin(0.5)
+    this.skillTexts.push(comboNote)
   }
 
-  private closeUpgradeMenu(): void {
-    this.isUpgradeMenuOpen = false
+  private closeSkillMenu(): void {
+    this.isSkillMenuOpen = false
     this.selectedTower = null
     
-    // Destroy upgrade UI elements
-    if (this.upgradePanel) {
-      this.upgradePanel.destroy()
-      this.upgradePanel = null
+    // Destroy skill UI elements
+    if (this.skillPanel) {
+      this.skillPanel.destroy()
+      this.skillPanel = null
     }
     
-    this.upgradeTexts.forEach(text => text.destroy())
-    this.upgradeTexts = []
+    this.skillTexts.forEach(text => text.destroy())
+    this.skillTexts = []
     
-    this.upgradeButtons.forEach(button => button.destroy())
-    this.upgradeButtons = []
+    this.skillButtons.forEach(button => button.destroy())
+    this.skillButtons = []
   }
 
-  private purchaseUpgrade(upgradeType: 'damage' | 'range' | 'fireRate'): void {
+  private equipSkillToTower(skill: SkillCard): void {
     if (!this.selectedTower) return
     
-    const cost = this.selectedTower.getUpgradeCost(upgradeType)
+    const success = this.selectedTower.equipSkill(skill)
     
-    if (this.coins >= cost && this.selectedTower.canUpgrade(upgradeType)) {
-      // Deduct coins
-      this.coins -= cost
+    if (success) {
+      // Remove skill from hand
+      this.playerHand = this.playerHand.filter(s => s.id !== skill.id)
       
-      // Apply upgrade
-      const success = this.selectedTower.upgrade(upgradeType)
+      // Update card hand display
+      this.updateCardHandDisplay()
       
-      if (success) {
-        console.log(`🔧 Purchased ${upgradeType} upgrade for ${cost} coins`)
-        this.statusText.setText(`${upgradeType} upgraded! (-${cost} coins)`)
-        
-        // Refresh the upgrade menu
-        this.showUpgradeMenu()
-      }
+      console.log(`🔧 Equipped skill: ${skill.name} to tower`)
+      this.statusText.setText(`${skill.name} equipped! Cards in hand: ${this.playerHand.length}`)
+      
+      // Refresh the skill menu to show the change
+      this.showSkillMenu()
+    } else {
+      this.statusText.setText(`Cannot equip ${skill.name} - tower may be full or incompatible`)
     }
   }
 
-  private cycleTowerType(): void {
-    this.currentTowerTypeIndex = (this.currentTowerTypeIndex + 1) % this.availableTowerTypes.length
-    this.currentTowerType = this.availableTowerTypes[this.currentTowerTypeIndex]
-    this.updateTowerSelection()
-  }
-
-  private selectTowerType(index: number): void {
-    if (index >= 0 && index < this.availableTowerTypes.length) {
-      this.currentTowerTypeIndex = index
-      this.currentTowerType = this.availableTowerTypes[index]
-      this.updateTowerSelection()
+  private unequipSkillFromTower(skillId: string): void {
+    if (!this.selectedTower) return
+    
+    const unequippedSkill = this.selectedTower.unequipSkill(skillId)
+    
+    if (unequippedSkill) {
+      // Add skill back to hand
+      this.playerHand.push(unequippedSkill)
+      
+      // Update card hand display
+      this.updateCardHandDisplay()
+      
+      console.log(`🔄 Unequipped skill: ${unequippedSkill.name} from tower`)
+      this.statusText.setText(`${unequippedSkill.name} unequipped! Cards in hand: ${this.playerHand.length}`)
+      
+      // Refresh the skill menu to show the change
+      this.showSkillMenu()
+    } else {
+      this.statusText.setText(`Failed to unequip skill`)
     }
   }
+
 
 
   private getTowerConfigs(): Record<string, { name: string, cost: number, damage: number, range: number, fireRate: number }> {
@@ -1078,26 +1225,69 @@ export default class GameScene extends Phaser.Scene {
 
     console.log('Tower fired! Creating projectile with damage:', fireData.damage)
 
-    // Create new projectile with tower's color
-    const projectile = new this.ProjectileClass(
-      this,
-      fireData.startPosition.x,
-      fireData.startPosition.y,
-      fireData.targetPosition.x,
-      fireData.targetPosition.y,
-      fireData.damage,
-      fireData.projectileColor
-    )
+    // Get tower's combined effects for special projectile behavior
+    const tower = fireData.tower
+    const combinedEffects = tower?.getCombinedEffects()
     
-    console.log('Projectile created with damage:', projectile?.getDamage())
+    // Create multiple projectiles if skill is equipped
+    const projectileCount = combinedEffects?.finalProjectileCount || 1
+    const spread = combinedEffects?.projectileSpread || 0
+    
+    console.log(`🎯 Creating ${projectileCount} projectiles with effects:`, combinedEffects)
+    
+    for (let i = 0; i < projectileCount; i++) {
+      let targetX = fireData.targetPosition.x
+      let targetY = fireData.targetPosition.y
+      
+      // Apply spread for multiple projectiles
+      if (projectileCount > 1 && spread > 0) {
+        const angle = Math.atan2(targetY - fireData.startPosition.y, targetX - fireData.startPosition.x)
+        const spreadOffset = (i - (projectileCount - 1) / 2) * spread
+        const newAngle = angle + spreadOffset
+        const distance = Phaser.Math.Distance.Between(fireData.startPosition.x, fireData.startPosition.y, targetX, targetY)
+        targetX = fireData.startPosition.x + Math.cos(newAngle) * distance
+        targetY = fireData.startPosition.y + Math.sin(newAngle) * distance
+      }
 
-    // Only add projectile if it was created successfully
-    if (projectile) {
-      this.projectiles.push(projectile)
-      console.log(`✅ Projectile added to array. Total projectiles: ${this.projectiles.length}`)
-    } else {
-      console.error('❌ Failed to create projectile!')
+      // Determine projectile color from skill effects
+      let projectileColor = fireData.projectileColor || 0xFFD700
+      if (combinedEffects?.finalProjectileColor) {
+        const colorHex = combinedEffects.finalProjectileColor.replace('#', '0x')
+        projectileColor = parseInt(colorHex, 16)
+      }
+
+      // Create projectile with skill effects
+      const projectile = new this.ProjectileClass(
+        this,
+        fireData.startPosition.x,
+        fireData.startPosition.y,
+        targetX,
+        targetY,
+        fireData.damage,
+        projectileColor
+      )
+      
+      // Apply special projectile properties from skills
+      if (projectile && combinedEffects) {
+        // Store skill effects on projectile for collision handling
+        (projectile as any).skillEffects = combinedEffects;
+        (projectile as any).projectileType = combinedEffects.finalProjectileType || 'basic';
+        (projectile as any).piercing = combinedEffects.piercing || false;
+        (projectile as any).piercingCount = combinedEffects.piercingCount || 0;
+        (projectile as any).explosionRadius = combinedEffects.explosionRadius || 0;
+        (projectile as any).slowEffect = combinedEffects.slowEffect || 0;
+        (projectile as any).slowDuration = combinedEffects.slowDuration || 0;
+        (projectile as any).chainCount = combinedEffects.chainCount || 0;
+        
+        console.log(`🎯 Created ${combinedEffects.finalProjectileType} projectile with special effects`)
+      }
+
+      if (projectile) {
+        this.projectiles.push(projectile)
+      }
     }
+    
+    console.log(`✅ Created ${projectileCount} projectiles. Total: ${this.projectiles.length}`)
 
     // Update status with simpler info
     this.statusText.setText(`Tower fired! (${this.projectiles.length} projectiles)`)
@@ -1199,6 +1389,9 @@ export default class GameScene extends Phaser.Scene {
     const waveBonus = 25 + (this.currentWave * 10)
     this.coins += waveBonus
     
+    // Draw skill cards as reward
+    this.drawSkillCards()
+    
     // Show completion message
     this.showWaveCompleteMessage(waveBonus)
     
@@ -1208,6 +1401,25 @@ export default class GameScene extends Phaser.Scene {
       this.waveState = 'preparing'
       this.startWave()
     })
+  }
+  
+  private drawSkillCards(): void {
+    if (!this.skillCardSystem) return
+    
+    // Draw 3 cards after each wave
+    const drawnCards = this.skillCardSystem.drawCards(3)
+    this.playerHand = [...this.playerHand, ...drawnCards]
+    
+    // Update the card hand display
+    this.updateCardHandDisplay()
+    
+    // Show skill card draw notification
+    if (drawnCards.length > 0) {
+      const cardNames = drawnCards.map(c => c.name).join(', ')
+      this.statusText.setText(`🎴 Drew skill cards: ${cardNames}`)
+      
+      console.log(`🎴 Player hand now has ${this.playerHand.length} cards`)
+    }
   }
 
   private getWaveStatusText(): string {
@@ -1440,15 +1652,30 @@ export default class GameScene extends Phaser.Scene {
           const pigeonVel = pigeon.getVelocity ? pigeon.getVelocity() : { x: 0, y: 0 }
           const speed = Math.sqrt(pigeonVel.x * pigeonVel.x + pigeonVel.y * pigeonVel.y)
           
-          console.log(`🎯 HIT! Projectile hit pigeon! Distance: ${distance.toFixed(1)}, Damage: ${damage}`)
+          // Get projectile special effects
+          const projectileType = (projectile as any).projectileType || 'basic'
+          const explosionRadius = (projectile as any).explosionRadius || 0
+          const slowEffect = (projectile as any).slowEffect || 0
+          const slowDuration = (projectile as any).slowDuration || 0
+          const piercing = (projectile as any).piercing || false
+          
+          console.log(`🎯 ${projectileType.toUpperCase()} HIT! Distance: ${distance.toFixed(1)}, Damage: ${damage}`)
           console.log(`🐦 Pigeon velocity: (${pigeonVel.x.toFixed(1)}, ${pigeonVel.y.toFixed(1)}) Speed: ${speed.toFixed(1)}`)
           
           // Apply damage directly to pigeon
           const eliminated = pigeon.takeDamage(damage)
           
-          // Mark projectile for removal
-          projectilesToRemove.push(p)
-          hitDetected = true
+          // Apply special effects based on projectile type
+          this.applyProjectileEffects(projectileType, projectilePos, pigeon, slowEffect, slowDuration, explosionRadius)
+          
+          // Create visual effects
+          this.createProjectileEffects(projectileType, projectilePos, explosionRadius)
+          
+          // Only remove projectile if it's not piercing
+          if (!piercing) {
+            projectilesToRemove.push(p)
+            hitDetected = true
+          }
           
           if (eliminated) {
             console.log('💀 Pigeon eliminated by projectile!')
@@ -1456,8 +1683,10 @@ export default class GameScene extends Phaser.Scene {
             this.handlePigeonElimination(pigeon)
           }
           
-          // Only one collision per projectile per frame
-          break
+          // If not piercing, break after first hit
+          if (!piercing) {
+            break
+          }
         }
       }
       
@@ -1475,4 +1704,112 @@ export default class GameScene extends Phaser.Scene {
       }
     }
   }
+
+  private applyProjectileEffects(projectileType: string, hitPos: {x: number, y: number}, hitPigeon: any, slowEffect: number, slowDuration: number, explosionRadius: number): void {
+    switch (projectileType) {
+      case 'fireball':
+        console.log('🔥 FIREBALL EXPLOSION!')
+        if (explosionRadius > 0) {
+          // Damage nearby pigeons
+          this.pigeons.forEach(pigeon => {
+            if (!pigeon.isAlive) return
+            const pigeonPos = pigeon.getPosition()
+            const distance = Phaser.Math.Distance.Between(hitPos.x, hitPos.y, pigeonPos.x, pigeonPos.y)
+            if (distance <= explosionRadius && pigeon !== hitPigeon) {
+              pigeon.takeDamage(15) // Explosion damage
+              console.log('🔥 Explosion damage to nearby pigeon!')
+            }
+          })
+        }
+        break
+        
+      case 'ice':
+        console.log('❄️ ICE SHARD SLOW!')
+        if (slowEffect > 0) {
+          // Apply slow effect to hit pigeon (would need to implement in Pigeon class)
+          console.log(`❄️ Slowing pigeon by ${slowEffect * 100}% for ${slowDuration}ms`)
+        }
+        break
+        
+      case 'lightning':
+        console.log('⚡ LIGHTNING CHAIN!')
+        // Chain to nearby pigeons
+        this.pigeons.forEach(pigeon => {
+          if (!pigeon.isAlive || pigeon === hitPigeon) return
+          const pigeonPos = pigeon.getPosition()
+          const distance = Phaser.Math.Distance.Between(hitPos.x, hitPos.y, pigeonPos.x, pigeonPos.y)
+          if (distance <= 60) { // Chain range
+            pigeon.takeDamage(10) // Chain damage
+            console.log('⚡ Lightning chained to nearby pigeon!')
+            // Create visual chain effect
+            this.createLightningChain(hitPos, pigeonPos)
+          }
+        })
+        break
+    }
+  }
+
+  private createProjectileEffects(projectileType: string, pos: {x: number, y: number}, explosionRadius: number): void {
+    switch (projectileType) {
+      case 'fireball':
+        // Create explosion visual
+        const explosion = this.add.graphics()
+        explosion.fillStyle(0xFF4444, 0.8)
+        explosion.fillCircle(pos.x, pos.y, explosionRadius || 25)
+        explosion.setAlpha(0.8)
+        
+        this.tweens.add({
+          targets: explosion,
+          scaleX: 2,
+          scaleY: 2,
+          alpha: 0,
+          duration: 400,
+          onComplete: () => explosion.destroy()
+        })
+        break
+        
+      case 'ice':
+        // Create ice crystal visual
+        const ice = this.add.graphics()
+        ice.fillStyle(0x4444FF, 0.6)
+        ice.fillTriangle(0, -10, 7, 5, -7, 5)
+        ice.setPosition(pos.x, pos.y)
+        
+        this.tweens.add({
+          targets: ice,
+          alpha: 0,
+          duration: 500,
+          onComplete: () => ice.destroy()
+        })
+        break
+        
+      case 'lightning':
+        // Create lightning flash
+        const flash = this.add.graphics()
+        flash.fillStyle(0xFFFF44, 1)
+        flash.fillCircle(pos.x, pos.y, 15)
+        
+        this.tweens.add({
+          targets: flash,
+          alpha: 0,
+          duration: 200,
+          onComplete: () => flash.destroy()
+        })
+        break
+    }
+  }
+
+  private createLightningChain(from: {x: number, y: number}, to: {x: number, y: number}): void {
+    const chain = this.add.graphics()
+    chain.lineStyle(2, 0xFFFF44, 1)
+    chain.lineBetween(from.x, from.y, to.x, to.y)
+    
+    this.tweens.add({
+      targets: chain,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => chain.destroy()
+    })
+  }
 }
+

@@ -11,9 +11,11 @@ Each milestone builds a **playable game** that you can test and validate before 
 - `package.json` - ✅ Added Phaser.js dependency (v3.85.2)
 - `src/app/game/page.tsx` - ✅ Main game page component with beautiful UI and Phaser integration
 - `src/components/Game/PhaserGame.tsx` - ✅ React wrapper for Phaser game instance with proper cleanup and GameScene integration
-- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with wave spawning system, visual tower selection UI, tower type selection (Q/1-4 keys), placement system, tower upgrade interface, projectile management, collision detection, predictive targeting, and complete combat system
+- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with wave spawning system, visual tower selection UI, tower type selection (Q/1-4 keys), placement system, skill card management interface, projectile management, collision detection, predictive targeting, and complete combat system
 - `src/game/entities/Pigeon.ts` - ✅ Pigeon entity class with curved path movement, health system, damage handling, and visual effects
-- `src/game/entities/Tower.ts` - ✅ Tower entity class with 4 tower types, click placement, range visualization, targeting system, color-coded projectiles, and complete upgrade system with visual indicators
+- `src/game/entities/Tower.ts` - ✅ Tower entity class with 4 tower types, click placement, range visualization, targeting system, color-coded projectiles, and skill slot system with visual skill indicators
+- `src/game/systems/SkillCardSystem.ts` - ✅ Complete skill card system with 8 different skills, rarity-based drawing, skill combination logic, and Path of Exile-inspired mechanics
+- `src/game/data/skills.json` - ✅ Skill card definitions including active skills (Fireball, Ice Shard, Lightning Bolt) and support skills (Multiple Projectiles, Piercing, Faster Attacks, etc.)
 - `src/game/entities/Projectile.ts` - ✅ Projectile entity with physics movement, collision detection, visual effects, and damage application
 - `src/game/scenes/MenuScene.ts` - Menu and card collection scenes
 - `src/game/systems/WaveManager.ts` - Wave spawning and difficulty progression
@@ -38,7 +40,7 @@ Each milestone builds a **playable game** that you can test and validate before 
 - **Damage System Fixes:** Enhanced projectile-pigeon collision detection with better tracking, validation, and comprehensive debugging
 - **Predictive Targeting:** Implemented intelligent targeting system that predicts pigeon movement for accurate projectile hits
 - **Wave System:** Implemented structured wave spawning with increasing difficulty, wave bonuses, animated notifications, and manual skip functionality
-- **Tower Upgrade System:** Complete upgrade system with 3 upgrade paths (damage, range, fire rate), exponential cost scaling, interactive UI, and visual upgrade indicators
+- **Skill Card System Pivot:** Completely replaced traditional tower upgrades with a Path of Exile-inspired skill gem system for dynamic tower customization
 
 ## Tasks
 

@@ -1,0 +1,156 @@
+{
+  "active_skills": {
+    "basic_shot": {
+      "id": "basic_shot",
+      "name": "Basic Shot",
+      "description": "Fires a single projectile",
+      "type": "active",
+      "rarity": "common",
+      "color": "#CCCCCC",
+      "isDefault": true,
+      "effects": {
+        "projectileCount": 1,
+        "damage": 1.0,
+        "projectileType": "basic"
+      }
+    },
+    "fireball": {
+      "id": "fireball",
+      "name": "Fireball",
+      "description": "Shoots explosive fireballs",
+      "type": "active", 
+      "rarity": "uncommon",
+      "color": "#FF4444",
+      "effects": {
+        "projectileType": "fireball",
+        "damage": 1.2,
+        "explosionRadius": 30,
+        "projectileColor": "#FF4444"
+      }
+    },
+    "ice_shard": {
+      "id": "ice_shard",
+      "name": "Ice Shard",
+      "description": "Fires ice projectiles that slow enemies",
+      "type": "active",
+      "rarity": "uncommon", 
+      "color": "#4444FF",
+      "effects": {
+        "projectileType": "ice",
+        "damage": 0.8,
+        "slowEffect": 0.5,
+        "slowDuration": 2000,
+        "projectileColor": "#4444FF"
+      }
+    },
+    "lightning_bolt": {
+      "id": "lightning_bolt",
+      "name": "Lightning Bolt",
+      "description": "Instant lightning that chains between enemies",
+      "type": "active",
+      "rarity": "rare",
+      "color": "#FFFF44",
+      "effects": {
+        "projectileType": "lightning",
+        "damage": 1.5,
+        "chainCount": 2,
+        "projectileSpeed": 999,
+        "projectileColor": "#FFFF44"
+      }
+    }
+  },
+  "support_skills": {
+    "multiple_projectiles": {
+      "id": "multiple_projectiles",
+      "name": "Multiple Projectiles",
+      "description": "Fires 3 projectiles in a spread",
+      "type": "support",
+      "rarity": "common",
+      "color": "#44FF44",
+      "effects": {
+        "projectileCount": 3,
+        "projectileSpread": 0.3,
+        "damage": 0.8
+      }
+    },
+    "piercing": {
+      "id": "piercing", 
+      "name": "Piercing",
+      "description": "Projectiles pass through enemies",
+      "type": "support",
+      "rarity": "uncommon",
+      "color": "#FF44FF",
+      "effects": {
+        "piercing": true,
+        "piercingCount": 3
+      }
+    },
+    "faster_attacks": {
+      "id": "faster_attacks",
+      "name": "Faster Attacks",
+      "description": "Greatly increases attack speed",
+      "type": "support",
+      "rarity": "common",
+      "color": "#FFAA44",
+      "effects": {
+        "fireRateMultiplier": 0.6
+      }
+    },
+    "concentrated_effect": {
+      "id": "concentrated_effect",
+      "name": "Concentrated Effect",
+      "description": "Higher damage but smaller area",
+      "type": "support",
+      "rarity": "uncommon", 
+      "color": "#AA44FF",
+      "effects": {
+        "damage": 1.4,
+        "range": 0.8,
+        "explosionRadius": 0.7
+      }
+    },
+    "increased_area": {
+      "id": "increased_area",
+      "name": "Increased Area",
+      "description": "Larger range and explosion radius",
+      "type": "support",
+      "rarity": "uncommon",
+      "color": "#44FFAA", 
+      "effects": {
+        "range": 1.3,
+        "explosionRadius": 1.5,
+        "damage": 0.9
+      }
+    },
+    "elemental_focus": {
+      "id": "elemental_focus",
+      "name": "Elemental Focus",
+      "description": "Massive elemental damage boost",
+      "type": "support",
+      "rarity": "rare",
+      "color": "#FF8844",
+      "effects": {
+        "elementalDamage": 1.6,
+        "fireRateMultiplier": 1.2
+      }
+    }
+  },
+  "rarities": {
+    "common": {
+      "weight": 60,
+      "color": "#CCCCCC"
+    },
+    "uncommon": {
+      "weight": 30,
+      "color": "#44FF44"
+    },
+    "rare": {
+      "weight": 10,
+      "color": "#4444FF"
+    },
+    "legendary": {
+      "weight": 1,
+      "color": "#FF8800"
+    }
+  }
+}
