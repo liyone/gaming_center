@@ -4,6 +4,26 @@ interface IPigeon {
   startMoving(): void
   update(time: number, delta: number): void
   getReward(): number
+  getPosition(): { x: number, y: number }
+}
+
+// Interface for Tower entity to avoid using 'any'
+interface ITower {
+  update(time: number, delta: number): void
+  destroy(): void
+  getPosition(): { x: number, y: number }
+  getBounds(): Phaser.Geom.Rectangle
+  getRange(): number
+  getDamage(): number
+  getCost(): number
+  findTarget(pigeons: IPigeon[]): { x: number, y: number } | null
+  attack(targetPosition: { x: number, y: number }, currentTime: number): void
+  canAttack(currentTime: number): boolean
+}
+
+// Interface for placement validation
+interface TowerPlacementValidator {
+  getPosition(): { x: number, y: number }
 }
 
 export default class GameScene extends Phaser.Scene {
@@ -14,13 +34,20 @@ export default class GameScene extends Phaser.Scene {
   
   // Game entities
   private pigeons: IPigeon[] = []
+  private towers: ITower[] = []
   private spawnTimer: Phaser.Time.TimerEvent | null = null
   private PigeonClass: new (scene: Phaser.Scene, x: number, y: number) => IPigeon | null = null
+  private TowerClass: new (scene: Phaser.Scene, x: number, y: number) => ITower | null = null
   
   // Game state
   private playerHealth: number = 10
   private score: number = 0
+  private coins: number = 100 // Starting currency for towers
   private isGameActive: boolean = true
+  
+  // Tower placement
+  private isPlacingTower: boolean = false
+  private placementPreview: Phaser.GameObjects.Graphics | null = null
   
   // Game world properties
   private readonly WORLD_WIDTH = 800
@@ -77,10 +104,14 @@ export default class GameScene extends Phaser.Scene {
   private async loadGameClasses(): Promise<void> {
     try {
       const { default: Pigeon } = await import('../entities/Pigeon')
+      const { default: Tower } = await import('../entities/Tower')
+      
       this.PigeonClass = Pigeon as new (scene: Phaser.Scene, x: number, y: number) => IPigeon
-      console.log('GameScene: Pigeon class loaded successfully')
+      this.TowerClass = Tower as new (scene: Phaser.Scene, x: number, y: number) => ITower
+      
+      console.log('GameScene: Game classes loaded successfully')
     } catch (error) {
-      console.error('GameScene: Failed to load Pigeon class:', error)
+      console.error('GameScene: Failed to load game classes:', error)
     }
   }
 
@@ -194,8 +225,8 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5)
     
     // Status text with game stats
-    this.statusText = this.add.text(400, 570, 'Press SPACE to spawn a pigeon manually!', {
-      fontSize: '16px',
+    this.statusText = this.add.text(400, 570, 'Press SPACE to spawn pigeon | Press T to place towers | Click towers to see range', {
+      fontSize: '14px',
       color: '#333333',
       backgroundColor: '#ffffff',
       padding: { x: 8, y: 4 }
@@ -214,10 +245,13 @@ export default class GameScene extends Phaser.Scene {
       delay: 100, // Update every 100ms
       callback: () => {
         if (gameStatsText && this.isGameActive) {
+          const placementStatus = this.isPlacingTower ? ' (PLACING TOWER)' : ''
           gameStatsText.setText(
             `❤️ Health: ${this.playerHealth}\n` +
             `🎯 Score: ${this.score}\n` +
+            `💰 Coins: ${this.coins}\n` +
             `🐦 Pigeons: ${this.pigeons.length}\n` +
+            `🏰 Towers: ${this.towers.length}${placementStatus}\n` +
             `⚡ Status: ${this.isGameActive ? 'Active' : 'Game Over'}`
           )
         }
@@ -226,7 +260,7 @@ export default class GameScene extends Phaser.Scene {
     })
     
     // Debug info
-    this.add.text(10, 120, 'MVP 1.0 - Core Proof of Concept\nPigeon Entity Testing', {
+    this.add.text(10, 150, 'MVP 1.0 - Core Proof of Concept\nTower Placement & Pigeon Entities', {
       fontSize: '12px',
       color: '#ffffff',
       backgroundColor: '#000000',
@@ -235,9 +269,14 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private setupInput(): void {
-    // Add click handling for testing
+    // Add click handling for tower placement and general interaction
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.handleClick(pointer.x, pointer.y)
+    })
+    
+    // Add mouse movement for tower placement preview
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      this.handleMouseMove(pointer.x, pointer.y)
     })
     
     // Add keyboard input
@@ -253,10 +292,31 @@ export default class GameScene extends Phaser.Scene {
         this.spawnPigeon()
       })
     }
+    
+    // Add T key for tower placement mode
+    const tKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T)
+    if (tKey) {
+      tKey.on('down', () => {
+        this.toggleTowerPlacement()
+      })
+    }
+    
+    // Add ESC key to cancel tower placement
+    const escKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+    if (escKey) {
+      escKey.on('down', () => {
+        this.cancelTowerPlacement()
+      })
+    }
   }
 
   private handleClick(x: number, y: number): void {
-    // Visual feedback for clicks
+    if (this.isPlacingTower) {
+      this.attemptTowerPlacement(x, y)
+      return
+    }
+    
+    // Visual feedback for regular clicks
     const clickEffect = this.add.graphics()
     clickEffect.lineStyle(3, 0xFFFF00, 1) // Yellow circle
     clickEffect.strokeCircle(x, y, 20)
@@ -272,9 +332,127 @@ export default class GameScene extends Phaser.Scene {
     })
     
     // Update status
-    this.statusText.setText(`Clicked at (${Math.round(x)}, ${Math.round(y)}) - Scene Working!`)
+    this.statusText.setText(`Clicked at (${Math.round(x)}, ${Math.round(y)}) - Press T to place towers!`)
     
     console.log('GameScene: Click detected at', x, y)
+  }
+
+  private handleMouseMove(x: number, y: number): void {
+    if (!this.isPlacingTower) return
+    
+    this.updatePlacementPreview(x, y)
+  }
+
+  private toggleTowerPlacement(): void {
+    if (!this.TowerClass) {
+      console.log('Tower class not loaded yet')
+      return
+    }
+    
+    this.isPlacingTower = !this.isPlacingTower
+    
+    if (this.isPlacingTower) {
+      this.startTowerPlacement()
+    } else {
+      this.cancelTowerPlacement()
+    }
+  }
+
+  private startTowerPlacement(): void {
+    console.log('Starting tower placement mode')
+    
+    // Create placement preview
+    this.placementPreview = this.add.graphics()
+    
+    // Update status
+    this.statusText.setText('Tower Placement Mode - Click to place tower (ESC to cancel)')
+  }
+
+  private cancelTowerPlacement(): void {
+    console.log('Cancelling tower placement mode')
+    
+    this.isPlacingTower = false
+    
+    // Remove placement preview
+    if (this.placementPreview) {
+      this.placementPreview.destroy()
+      this.placementPreview = null
+    }
+    
+    // Update status
+    this.statusText.setText('Tower placement cancelled - Press T to place towers again')
+  }
+
+  private updatePlacementPreview(x: number, y: number): void {
+    if (!this.placementPreview) return
+    
+    this.placementPreview.clear()
+    this.placementPreview.setPosition(x, y)
+    
+    // Check if placement is valid
+    const isValid = this.isValidTowerPlacement(x, y)
+    const color = isValid ? 0x00FF00 : 0xFF0000 // Green if valid, red if invalid
+    const alpha = isValid ? 0.6 : 0.4
+    
+    // Draw tower preview
+    this.placementPreview.fillStyle(color, alpha)
+    this.placementPreview.fillCircle(0, 0, 16)
+    
+    // Draw range preview
+    this.placementPreview.lineStyle(2, color, alpha * 0.5)
+    this.placementPreview.strokeCircle(0, 0, 80) // Default tower range
+    
+    // Draw placement guide
+    if (!isValid) {
+      this.placementPreview.lineStyle(2, 0xFF0000, 0.8)
+      this.placementPreview.lineBetween(-20, -20, 20, 20)
+      this.placementPreview.lineBetween(-20, 20, 20, -20)
+    }
+  }
+
+  private isValidTowerPlacement(x: number, y: number): boolean {
+    if (!this.TowerClass) return false
+    
+    // Check if player has enough coins
+    const towerCost = 50 // Default tower cost
+    if (this.coins < towerCost) return false
+    
+    // Use Tower class static method for validation
+    // Type assertion is needed because of dynamic loading
+    const TowerConstructor = this.TowerClass as typeof import('../entities/Tower').default
+    const towerPositions: TowerPlacementValidator[] = this.towers.map(tower => ({
+      getPosition: () => tower.getPosition()
+    }))
+    return TowerConstructor.isValidPlacement(x, y, towerPositions)
+  }
+
+  private attemptTowerPlacement(x: number, y: number): void {
+    if (!this.isValidTowerPlacement(x, y)) {
+      console.log('Invalid tower placement location')
+      this.statusText.setText('Cannot place tower here! Check path/spacing/cost')
+      return
+    }
+    
+    if (!this.TowerClass) {
+      console.log('Tower class not loaded')
+      return
+    }
+    
+    // Create new tower
+    const tower = new this.TowerClass(this, x, y)
+    this.towers.push(tower)
+    
+    // Deduct cost
+    const towerCost = tower.getCost()
+    this.coins -= towerCost
+    
+    // Cancel placement mode
+    this.cancelTowerPlacement()
+    
+    // Update status
+    this.statusText.setText(`Tower placed! Cost: ${towerCost} coins. Press T for more towers.`)
+    
+    console.log('Tower placed at', x, y, 'Cost:', towerCost)
   }
 
   private showWelcomeMessage(): void {
@@ -368,7 +546,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handlePigeonElimination(pigeon: IPigeon): void {
-    console.log('Pigeon eliminated! Player gains score.')
+    console.log('Pigeon eliminated! Player gains score and coins.')
     
     // Remove from pigeons array
     const index = this.pigeons.indexOf(pigeon)
@@ -376,11 +554,13 @@ export default class GameScene extends Phaser.Scene {
       this.pigeons.splice(index, 1)
     }
     
-    // Player gains score
-    this.score += pigeon.getReward()
+    // Player gains score and coins
+    const reward = pigeon.getReward()
+    this.score += reward
+    this.coins += Math.floor(reward / 2) // Gain coins equal to half the score reward
     
     // Update status
-    this.statusText.setText(`Pigeon eliminated! Score: ${this.score}`)
+    this.statusText.setText(`Pigeon eliminated! +${reward} score, +${Math.floor(reward / 2)} coins`)
   }
 
   private gameOver(): void {
@@ -418,6 +598,19 @@ export default class GameScene extends Phaser.Scene {
     // Update all pigeons
     this.pigeons.forEach(pigeon => {
       pigeon.update(time, delta)
+    })
+    
+    // Update all towers
+    this.towers.forEach(tower => {
+      tower.update(time, delta)
+      
+      // Tower combat logic
+      if (tower.canAttack(time)) {
+        const target = tower.findTarget(this.pigeons)
+        if (target) {
+          tower.attack(target, time)
+        }
+      }
     })
     
     // Remove dead pigeons that have finished their elimination animation
