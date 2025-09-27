@@ -1,4 +1,4 @@
-import { SkillCardSystem, SkillCard } from '../systems/SkillCardSystem'
+import { SkillCardSystem, SkillCard, CombinedSkillEffects } from '../systems/SkillCardSystem'
 
 // Interface for Pigeon entity to avoid using 'any'
 interface IPigeon {
@@ -29,13 +29,13 @@ interface ITower {
   findTarget(pigeons: IPigeon[]): { x: number, y: number } | null
   attack(targetPosition: { x: number, y: number }, currentTime: number): void
   canAttack(currentTime: number): boolean
-  canEquipSkill(skill: any): boolean
-  equipSkill(skill: any): boolean
+  canEquipSkill(skill: SkillCard): boolean
+  equipSkill(skill: SkillCard): boolean
   removeSkill(skillId: string): boolean
-  unequipSkill(skillId: string): any
-  getEquippedSkills(): any[]
+  unequipSkill(skillId: string): SkillCard | null
+  getEquippedSkills(): SkillCard[]
   getAvailableSkillSlots(): number
-  getCombinedEffects(): any
+  getCombinedEffects(): CombinedSkillEffects | null
 }
 
 // Interface for placement validation
@@ -172,7 +172,7 @@ export default class GameScene extends Phaser.Scene {
       const { default: Projectile } = await import('../entities/Projectile')
       
       this.PigeonClass = Pigeon as new (scene: Phaser.Scene, x: number, y: number) => IPigeon
-      this.TowerClass = Tower as new (scene: Phaser.Scene, x: number, y: number) => ITower
+      this.TowerClass = Tower as new (scene: Phaser.Scene, x: number, y: number, towerType?: string, skillCardSystem?: SkillCardSystem) => ITower
       this.ProjectileClass = Projectile as new (scene: Phaser.Scene, startX: number, startY: number, targetX: number, targetY: number, damage: number) => IProjectile
       
       console.log('GameScene: All game classes loaded successfully')
@@ -299,7 +299,7 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5)
     
     // Initialize simple status
-    this.statusText.setText('Wave System Active! Click towers for skills | Press T to place | SPACE to skip waves')
+    this.statusText.setText('🎴 Select cards from hand below → Click towers to apply | T=Place tower | SPACE=Skip wave | ESC=Deselect')
     
     // Game stats UI
     const gameStatsText = this.add.text(10, 10, '', {
@@ -460,6 +460,11 @@ export default class GameScene extends Phaser.Scene {
       escKey.on('down', () => {
         if (this.isSkillMenuOpen) {
           this.closeSkillMenu()
+        } else if (this.selectedCardIndex !== -1) {
+          // Deselect card
+          this.selectedCardIndex = -1
+          this.updateCardHandDisplay()
+          this.statusText.setText(`🎴 Card deselected. Select a card and click a tower to apply skills.`)
         } else {
           this.cancelTowerPlacement()
         }
@@ -468,7 +473,7 @@ export default class GameScene extends Phaser.Scene {
     
     // Add number keys for quick card application (when tower is selected)
     for (let i = 1; i <= 9; i++) {
-      const keyCode = `DIGIT_${i}` as any
+      const keyCode = `DIGIT_${i}` as keyof typeof Phaser.Input.Keyboard.KeyCodes
       const key = this.input.keyboard?.addKey(keyCode)
       if (key) {
         key.on('down', () => {
@@ -540,13 +545,16 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5)
     this.cardHandTexts.push(headerText)
     
-    // Instruction text
-    const instructionText = this.add.text(400, 515, 'Click cards to select → Click towers to apply | Number keys 1-9 for quick use', {
-      fontSize: '12px',
-      color: '#FFFFFF',
-      fontStyle: 'bold'
+    // Instructions
+    const instructionText = this.add.text(400, 515, 'CLICK CARD → CLICK TOWER → CARD APPLIES | CLICK SAME CARD OR ESC TO DESELECT', {
+      fontSize: '9px',
+      color: '#00FF88',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 1
     }).setOrigin(0.5)
     this.cardHandTexts.push(instructionText)
+    
     
     // Initial empty hand message
     this.updateCardHandDisplay()
@@ -648,12 +656,38 @@ export default class GameScene extends Phaser.Scene {
       })
       this.cardHandTexts.push(numberText)
       
-      // Selected indicator
+      // Selected indicator - much more obvious
       if (this.selectedCardIndex === index) {
         const selectIndicator = this.add.graphics()
-        selectIndicator.lineStyle(4, 0x00FF00, 1)
-        selectIndicator.strokeRoundedRect(cardX - cardWidth/2 - 4, cardY - cardHeight/2 - 4, cardWidth + 8, cardHeight + 8, 12)
+        
+        // Pulsing green glow effect
+        selectIndicator.lineStyle(6, 0x00FF88, 1)
+        selectIndicator.strokeRoundedRect(cardX - cardWidth/2 - 6, cardY - cardHeight/2 - 6, cardWidth + 12, cardHeight + 12, 12)
+        
+        // Inner bright green border
+        selectIndicator.lineStyle(2, 0x00FFFF, 1)
+        selectIndicator.strokeRoundedRect(cardX - cardWidth/2 - 2, cardY - cardHeight/2 - 2, cardWidth + 4, cardHeight + 4, 8)
+        
+        // Add "SELECTED" text above card
+        const selectedText = this.add.text(cardX, cardY - cardHeight/2 - 15, 'SELECTED', {
+          fontSize: '8px',
+          color: '#00FF88',
+          fontStyle: 'bold',
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setOrigin(0.5)
+        this.cardHandTexts.push(selectedText)
+        
         this.cardHandButtons.push(selectIndicator)
+        
+        // Add pulsing animation
+        this.tweens.add({
+          targets: selectIndicator,
+          alpha: 0.5,
+          duration: 500,
+          yoyo: true,
+          repeat: -1
+        })
       }
     })
   }
@@ -677,10 +711,20 @@ export default class GameScene extends Phaser.Scene {
   private cardTooltip: Phaser.GameObjects.Text | null = null
 
   private selectCardFromHand(index: number): void {
+    // If clicking the same card, deselect it
+    if (this.selectedCardIndex === index) {
+      this.selectedCardIndex = -1
+      this.statusText.setText(`🎴 Card deselected. Click any card to select it again.`)
+      this.updateCardHandDisplay()
+      return
+    }
+    
+    // Select new card
     this.selectedCardIndex = index
     const card = this.playerHand[index]
     if (card) {
-      this.statusText.setText(`🎴 Selected: ${card.name} - Click a tower to apply this skill`)
+      const typeIcon = this.getCardTypeIcon(card)
+      this.statusText.setText(`🎴 ${typeIcon} ${card.name} SELECTED! → Click any tower to apply | Click card again to deselect`)
       // Update display to show selection
       this.updateCardHandDisplay()
     }
@@ -907,7 +951,7 @@ export default class GameScene extends Phaser.Scene {
     
     // Use Tower class static method for validation
     // Type assertion is needed because of dynamic loading
-    const TowerConstructor = this.TowerClass as typeof import('../entities/Tower').default
+    const TowerConstructor = this.TowerClass as unknown as typeof import('../entities/Tower').default
     const towerPositions: TowerPlacementValidator[] = this.towers.map(tower => ({
       getPosition: () => tower.getPosition()
     }))
@@ -979,12 +1023,12 @@ export default class GameScene extends Phaser.Scene {
     const equippedSkills = this.selectedTower.getEquippedSkills()
     const availableSlots = this.selectedTower.getAvailableSkillSlots()
     
-    // Create skill panel - bigger to accommodate unequip buttons
+    // Create skill panel - bigger to accommodate remove buttons
     this.skillPanel = this.add.graphics()
     this.skillPanel.fillStyle(0x1A202C, 0.95)
     this.skillPanel.lineStyle(2, 0x4A5568, 1)
-    this.skillPanel.fillRoundedRect(towerPos.x - 180, towerPos.y - 180, 360, 280, 8)
-    this.skillPanel.strokeRoundedRect(towerPos.x - 180, towerPos.y - 180, 360, 280, 8)
+    this.skillPanel.fillRoundedRect(towerPos.x - 200, towerPos.y - 200, 400, 320, 8)
+    this.skillPanel.strokeRoundedRect(towerPos.x - 200, towerPos.y - 200, 400, 320, 8)
     
     // Tower name header
     const headerText = this.add.text(towerPos.x, towerPos.y - 130, this.selectedTower.getTowerName(), {
@@ -1004,7 +1048,7 @@ export default class GameScene extends Phaser.Scene {
     
     // Show equipped skills with unequip buttons
     if (equippedSkills.length > 0) {
-      const equippedText = this.add.text(towerPos.x, towerPos.y - 100, 'Equipped Skills (Click to Unequip):', {
+      const equippedText = this.add.text(towerPos.x, towerPos.y - 100, 'Equipped Skills:', {
         fontSize: '12px',
         color: '#68D391',
         fontStyle: 'bold'
@@ -1012,40 +1056,57 @@ export default class GameScene extends Phaser.Scene {
       this.skillTexts.push(equippedText)
       
       equippedSkills.forEach((skill, index) => {
-        const skillY = towerPos.y - 85 + (index * 20)
+        const skillY = towerPos.y - 85 + (index * 25)
         
-        // Create unequip button for each equipped skill
-        const unequipButton = this.add.graphics()
-        unequipButton.fillStyle(0xE53E3E, 1) // Red background
-        unequipButton.lineStyle(1, 0xFFFFFF, 1)
-        unequipButton.fillRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
-        unequipButton.strokeRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+        // Create skill display background
+        const skillBg = this.add.graphics()
+        skillBg.fillStyle(0x2D3748, 0.8)
+        const skillColor = typeof skill.color === 'string' ? parseInt(skill.color.replace('#', '0x'), 16) : skill.color || 0xFFFFFF
+        skillBg.lineStyle(1, skillColor, 1)
+        skillBg.fillRoundedRect(towerPos.x - 140, skillY - 10, 190, 20, 6)
+        skillBg.strokeRoundedRect(towerPos.x - 140, skillY - 10, 190, 20, 6)
+        this.skillButtons.push(skillBg)
         
-        // Make button interactive
-        unequipButton.setInteractive(new Phaser.Geom.Rectangle(towerPos.x - 120, skillY - 8, 240, 16), Phaser.Geom.Rectangle.Contains)
-        unequipButton.on('pointerdown', () => this.unequipSkillFromTower(skill.id))
-        unequipButton.on('pointerover', () => {
-          unequipButton.clear()
-          unequipButton.fillStyle(0xFF6B6B, 1) // Lighter red on hover
-          unequipButton.lineStyle(1, 0xFFFFFF, 1)
-          unequipButton.fillRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
-          unequipButton.strokeRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+        // Create REMOVE button (much more obvious)
+        const removeButton = this.add.graphics()
+        removeButton.fillStyle(0xFF4444, 1) // Bright red
+        removeButton.lineStyle(2, 0xFFFFFF, 1)
+        removeButton.fillRoundedRect(towerPos.x + 55, skillY - 8, 75, 16, 4)
+        removeButton.strokeRoundedRect(towerPos.x + 55, skillY - 8, 75, 16, 4)
+        
+        // Make REMOVE button interactive
+        removeButton.setInteractive(new Phaser.Geom.Rectangle(towerPos.x + 55, skillY - 8, 75, 16), Phaser.Geom.Rectangle.Contains)
+        removeButton.on('pointerdown', () => this.unequipSkillFromTower(skill.id))
+        removeButton.on('pointerover', () => {
+          removeButton.clear()
+          removeButton.fillStyle(0xFF6666, 1) // Lighter red on hover
+          removeButton.lineStyle(2, 0xFFFFFF, 1)
+          removeButton.fillRoundedRect(towerPos.x + 55, skillY - 8, 75, 16, 4)
+          removeButton.strokeRoundedRect(towerPos.x + 55, skillY - 8, 75, 16, 4)
         })
-        unequipButton.on('pointerout', () => {
-          unequipButton.clear()
-          unequipButton.fillStyle(0xE53E3E, 1)
-          unequipButton.lineStyle(1, 0xFFFFFF, 1)
-          unequipButton.fillRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
-          unequipButton.strokeRoundedRect(towerPos.x - 120, skillY - 8, 240, 16, 4)
+        removeButton.on('pointerout', () => {
+          removeButton.clear()
+          removeButton.fillStyle(0xFF4444, 1)
+          removeButton.lineStyle(2, 0xFFFFFF, 1)
+          removeButton.fillRoundedRect(towerPos.x + 55, skillY - 8, 75, 16, 4)
+          removeButton.strokeRoundedRect(towerPos.x + 55, skillY - 8, 75, 16, 4)
         })
         
-        this.skillButtons.push(unequipButton)
+        this.skillButtons.push(removeButton)
+        
+        // REMOVE button text
+        const removeText = this.add.text(towerPos.x + 92, skillY, '❌ REMOVE', {
+          fontSize: '8px',
+          color: '#FFFFFF',
+          fontStyle: 'bold'
+        }).setOrigin(0.5)
+        this.skillTexts.push(removeText)
         
         // Skill text with type icon
         const typeIcon = this.getCardTypeIcon({ id: skill.id } as SkillCard)
-        const skillText = this.add.text(towerPos.x, skillY, `${typeIcon} ${skill.name} (${skill.type}) - Click to Unequip`, {
+        const skillText = this.add.text(towerPos.x - 45, skillY, `${typeIcon} ${skill.name}`, {
           fontSize: '10px',
-          color: '#FFFFFF',
+          color: skill.color || '#FFFFFF',
           fontStyle: 'bold'
         }).setOrigin(0.5)
         this.skillTexts.push(skillText)
@@ -1054,7 +1115,7 @@ export default class GameScene extends Phaser.Scene {
     
     // Show available skills from hand
     if (this.playerHand.length > 0 && availableSlots > 0) {
-      const handHeaderY = towerPos.y - 85 + (equippedSkills.length * 20) + 15
+      const handHeaderY = towerPos.y - 85 + (equippedSkills.length * 25) + 20
       const handText = this.add.text(towerPos.x, handHeaderY, 'Available Skills from Hand:', {
         fontSize: '12px',
         color: '#FFD700',
@@ -1230,8 +1291,8 @@ export default class GameScene extends Phaser.Scene {
     const combinedEffects = tower?.getCombinedEffects()
     
     // Create multiple projectiles if skill is equipped
-    const projectileCount = combinedEffects?.finalProjectileCount || 1
-    const spread = combinedEffects?.projectileSpread || 0
+    const projectileCount = (combinedEffects?.finalProjectileCount as number) || 1
+    const spread = (combinedEffects?.projectileSpread as number) || 0
     
     console.log(`🎯 Creating ${projectileCount} projectiles with effects:`, combinedEffects)
     
@@ -1251,7 +1312,7 @@ export default class GameScene extends Phaser.Scene {
 
       // Determine projectile color from skill effects
       let projectileColor = fireData.projectileColor || 0xFFD700
-      if (combinedEffects?.finalProjectileColor) {
+      if (combinedEffects?.finalProjectileColor && typeof combinedEffects.finalProjectileColor === 'string') {
         const colorHex = combinedEffects.finalProjectileColor.replace('#', '0x')
         projectileColor = parseInt(colorHex, 16)
       }
@@ -1270,14 +1331,14 @@ export default class GameScene extends Phaser.Scene {
       // Apply special projectile properties from skills
       if (projectile && combinedEffects) {
         // Store skill effects on projectile for collision handling
-        (projectile as any).skillEffects = combinedEffects;
-        (projectile as any).projectileType = combinedEffects.finalProjectileType || 'basic';
-        (projectile as any).piercing = combinedEffects.piercing || false;
-        (projectile as any).piercingCount = combinedEffects.piercingCount || 0;
-        (projectile as any).explosionRadius = combinedEffects.explosionRadius || 0;
-        (projectile as any).slowEffect = combinedEffects.slowEffect || 0;
-        (projectile as any).slowDuration = combinedEffects.slowDuration || 0;
-        (projectile as any).chainCount = combinedEffects.chainCount || 0;
+        (projectile as IProjectile & { [key: string]: unknown }).skillEffects = combinedEffects;
+        (projectile as IProjectile & { [key: string]: unknown }).projectileType = combinedEffects.finalProjectileType || 'basic';
+        (projectile as IProjectile & { [key: string]: unknown }).piercing = combinedEffects.piercing || false;
+        (projectile as IProjectile & { [key: string]: unknown }).piercingCount = combinedEffects.piercingCount || 0;
+        (projectile as IProjectile & { [key: string]: unknown }).explosionRadius = combinedEffects.explosionRadius || 0;
+        (projectile as IProjectile & { [key: string]: unknown }).slowEffect = combinedEffects.slowEffect || 0;
+        (projectile as IProjectile & { [key: string]: unknown }).slowDuration = combinedEffects.slowDuration || 0;
+        (projectile as IProjectile & { [key: string]: unknown }).chainCount = combinedEffects.chainCount || 0;
         
         console.log(`🎯 Created ${combinedEffects.finalProjectileType} projectile with special effects`)
       }
@@ -1653,11 +1714,11 @@ export default class GameScene extends Phaser.Scene {
           const speed = Math.sqrt(pigeonVel.x * pigeonVel.x + pigeonVel.y * pigeonVel.y)
           
           // Get projectile special effects
-          const projectileType = (projectile as any).projectileType || 'basic'
-          const explosionRadius = (projectile as any).explosionRadius || 0
-          const slowEffect = (projectile as any).slowEffect || 0
-          const slowDuration = (projectile as any).slowDuration || 0
-          const piercing = (projectile as any).piercing || false
+          const projectileType = (projectile as IProjectile & { [key: string]: unknown }).projectileType as string || 'basic'
+          const explosionRadius = (projectile as IProjectile & { [key: string]: unknown }).explosionRadius as number || 0
+          const slowEffect = (projectile as IProjectile & { [key: string]: unknown }).slowEffect as number || 0
+          const slowDuration = (projectile as IProjectile & { [key: string]: unknown }).slowDuration as number || 0
+          const piercing = (projectile as IProjectile & { [key: string]: unknown }).piercing as boolean || false
           
           console.log(`🎯 ${projectileType.toUpperCase()} HIT! Distance: ${distance.toFixed(1)}, Damage: ${damage}`)
           console.log(`🐦 Pigeon velocity: (${pigeonVel.x.toFixed(1)}, ${pigeonVel.y.toFixed(1)}) Speed: ${speed.toFixed(1)}`)
@@ -1705,7 +1766,7 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  private applyProjectileEffects(projectileType: string, hitPos: {x: number, y: number}, hitPigeon: any, slowEffect: number, slowDuration: number, explosionRadius: number): void {
+  private applyProjectileEffects(projectileType: string, hitPos: {x: number, y: number}, hitPigeon: IPigeon, slowEffect: number, slowDuration: number, explosionRadius: number): void {
     switch (projectileType) {
       case 'fireball':
         console.log('🔥 FIREBALL EXPLOSION!')

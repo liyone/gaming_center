@@ -270,7 +270,6 @@ export default class Pigeon {
     this.scene.events.emit('pigeonEscaped', this)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public update(_time: number, delta: number): void {
     if (!this.isAlive || !this.isMoving) return
     

@@ -50,7 +50,11 @@ export interface CombinedSkillEffects extends SkillEffects {
 
 export class SkillCardSystem {
   private scene: Phaser.Scene
-  private skillsData: any = null
+  private skillsData: {
+    active_skills: { [key: string]: SkillCard }
+    support_skills: { [key: string]: SkillCard }
+    rarities: { [key: string]: { weight: number, color: string } }
+  } | null = null
   private availableCards: SkillCard[] = []
   private playerHand: SkillCard[] = []
   
@@ -206,21 +210,27 @@ export class SkillCardSystem {
       }
     }
     
-    this.skillsData = skillsData
+    this.skillsData = skillsData as {
+      active_skills: { [key: string]: SkillCard }
+      support_skills: { [key: string]: SkillCard }
+      rarities: { [key: string]: { weight: number, color: string } }
+    }
     this.buildAvailableCards()
   }
   
   private buildAvailableCards(): void {
     this.availableCards = []
     
+    if (!this.skillsData) return
+    
     // Add active skills
-    for (const [key, skill] of Object.entries(this.skillsData.active_skills)) {
-      this.availableCards.push(skill as SkillCard)
+    for (const [, skill] of Object.entries(this.skillsData.active_skills)) {
+      this.availableCards.push(skill)
     }
     
     // Add support skills
-    for (const [key, skill] of Object.entries(this.skillsData.support_skills)) {
-      this.availableCards.push(skill as SkillCard)
+    for (const [, skill] of Object.entries(this.skillsData.support_skills)) {
+      this.availableCards.push(skill)
     }
     
     console.log(`💎 Loaded ${this.availableCards.length} skill cards`)
@@ -249,13 +259,13 @@ export class SkillCardSystem {
     
     // Weighted random selection based on rarity
     const totalWeight = drawableCards.reduce((sum, card) => {
-      return sum + this.skillsData.rarities[card.rarity].weight
+      return sum + (this.skillsData?.rarities[card.rarity].weight || 1)
     }, 0)
     
     let random = Math.random() * totalWeight
     
     for (const card of drawableCards) {
-      random -= this.skillsData.rarities[card.rarity].weight
+      random -= (this.skillsData?.rarities[card.rarity].weight || 1)
       if (random <= 0) {
         return { ...card } // Return a copy
       }
@@ -278,9 +288,9 @@ export class SkillCardSystem {
     return false
   }
   
-  public combineSkills(skills: SkillCard[], baseStats: any): CombinedSkillEffects {
+  public combineSkills(skills: SkillCard[], baseStats: { damage?: number, range?: number, fireRate?: number }): CombinedSkillEffects {
     // Start with base tower stats
-    let combined: CombinedSkillEffects = {
+    const combined: CombinedSkillEffects = {
       finalProjectileCount: 1,
       finalDamage: baseStats.damage || 20,
       finalRange: baseStats.range || 80,
