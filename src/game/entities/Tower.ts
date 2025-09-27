@@ -1,3 +1,17 @@
+interface TowerConfig {
+  id: string
+  name: string
+  description: string
+  damage: number
+  range: number
+  fireRate: number
+  cost: number
+  color: number
+  projectileColor: number
+  maxLevel: number
+  upgradeCostMultiplier: number
+}
+
 export default class Tower {
   public sprite!: Phaser.GameObjects.Graphics
   public body!: Phaser.Physics.Arcade.Body
@@ -5,23 +19,34 @@ export default class Tower {
   private rangeCircle: Phaser.GameObjects.Graphics | null = null
   
   // Tower properties
-  public damage: number = 25
-  public range: number = 80
-  public fireRate: number = 1000 // milliseconds between shots
-  public cost: number = 50 // cost to place tower
+  public damage: number
+  public range: number
+  public fireRate: number
+  public cost: number
   public level: number = 1
+  public towerType: string
+  private config: TowerConfig
   
   // Visual properties
   private readonly TOWER_SIZE = 16
-  private readonly TOWER_COLOR = 0x4A5568 // Dark gray
   private readonly RANGE_COLOR = 0x68D391 // Light green
   
   // Combat state
   private lastFireTime: number = 0
   private isShowingRange: boolean = false
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, towerType: string = 'basic') {
     this.scene = scene
+    this.towerType = towerType
+    
+    // Load tower configuration
+    this.config = this.loadTowerConfig(towerType)
+    
+    // Set properties from config
+    this.damage = this.config.damage
+    this.range = this.config.range
+    this.fireRate = this.config.fireRate
+    this.cost = this.config.cost
     
     // Create tower sprite
     this.createSprite(x, y)
@@ -35,7 +60,67 @@ export default class Tower {
     // Create range indicator (hidden by default)
     this.createRangeIndicator()
     
-    console.log('Tower created at', x, y)
+    console.log(`${this.config.name} created at`, x, y)
+  }
+
+  private loadTowerConfig(towerType: string): TowerConfig {
+    // Default configurations - in a real app, this would load from JSON
+    const configs: Record<string, TowerConfig> = {
+      basic: {
+        id: 'basic',
+        name: 'Basic Tower',
+        description: 'Balanced damage and fire rate',
+        damage: 25,
+        range: 80,
+        fireRate: 1000,
+        cost: 50,
+        color: 0x4A5568,
+        projectileColor: 0xFFD700,
+        maxLevel: 3,
+        upgradeCostMultiplier: 1.5
+      },
+      rapidFire: {
+        id: 'rapidFire',
+        name: 'Rapid-Fire Tower',
+        description: 'Fast firing rate, lower damage',
+        damage: 15,
+        range: 70,
+        fireRate: 400,
+        cost: 75,
+        color: 0xE53E3E,
+        projectileColor: 0xFF6B6B,
+        maxLevel: 3,
+        upgradeCostMultiplier: 1.6
+      },
+      heavyDamage: {
+        id: 'heavyDamage',
+        name: 'Heavy Damage Tower',
+        description: 'High damage, slow firing',
+        damage: 60,
+        range: 90,
+        fireRate: 2000,
+        cost: 100,
+        color: 0x553C9A,
+        projectileColor: 0xB794F6,
+        maxLevel: 3,
+        upgradeCostMultiplier: 2.0
+      },
+      sniper: {
+        id: 'sniper',
+        name: 'Sniper Tower',
+        description: 'Extreme range, precise shots',
+        damage: 80,
+        range: 150,
+        fireRate: 3000,
+        cost: 150,
+        color: 0x2F855A,
+        projectileColor: 0x48BB78,
+        maxLevel: 3,
+        upgradeCostMultiplier: 2.5
+      }
+    }
+    
+    return configs[towerType] || configs.basic
   }
 
   private createSprite(x: number, y: number): void {
@@ -69,29 +154,84 @@ export default class Tower {
   private updateSprite(): void {
     this.sprite.clear()
     
-    // Draw tower base (circular)
-    this.sprite.fillStyle(this.TOWER_COLOR, 1)
+    // Draw tower base (circular) using config color
+    this.sprite.fillStyle(this.config.color, 1)
     this.sprite.fillCircle(0, 0, this.TOWER_SIZE)
     
-    // Draw tower border
-    this.sprite.lineStyle(2, 0x2D3748, 1) // Darker border
+    // Draw tower border (darker version of main color)
+    const borderColor = this.darkenColor(this.config.color)
+    this.sprite.lineStyle(2, borderColor, 1)
     this.sprite.strokeCircle(0, 0, this.TOWER_SIZE)
     
     // Draw tower cannon (rectangle pointing right)
-    this.sprite.fillStyle(0x2D3748, 1)
+    this.sprite.fillStyle(borderColor, 1)
     this.sprite.fillRect(0, -4, this.TOWER_SIZE + 4, 8)
+    
+    // Draw tower type indicator based on type
+    this.drawTowerTypeIndicator()
     
     // Draw level indicator
     if (this.level > 1) {
       this.sprite.fillStyle(0xF7FAFC, 1) // White
       this.sprite.fillCircle(0, 0, 6)
-      // Add level number in future iterations
+      
+      // Draw level number
+      const levelText = this.scene.add.text(this.sprite.x, this.sprite.y, this.level.toString(), {
+        fontSize: '10px',
+        color: '#000000'
+      }).setOrigin(0.5)
+      
+      // Remove level text after a short delay to prevent memory leaks
+      this.scene.time.delayedCall(100, () => {
+        if (levelText) levelText.destroy()
+      })
     }
     
     // Draw targeting reticle (small cross at center)
     this.sprite.lineStyle(1, 0xF7FAFC, 0.8)
     this.sprite.lineBetween(-3, 0, 3, 0)
     this.sprite.lineBetween(0, -3, 0, 3)
+  }
+
+  private drawTowerTypeIndicator(): void {
+    // Draw small shape to indicate tower type
+    const indicatorColor = this.config.projectileColor
+    
+    switch (this.towerType) {
+      case 'rapidFire':
+        // Draw small triangles for rapid fire
+        this.sprite.fillStyle(indicatorColor, 0.8)
+        this.sprite.fillTriangle(-6, -8, -2, -8, -4, -12)
+        this.sprite.fillTriangle(2, -8, 6, -8, 4, -12)
+        break
+      case 'heavyDamage':
+        // Draw diamond for heavy damage
+        this.sprite.fillStyle(indicatorColor, 0.8)
+        this.sprite.fillTriangle(0, -12, -4, -8, 4, -8)
+        break
+      case 'sniper':
+        // Draw crosshair for sniper
+        this.sprite.lineStyle(2, indicatorColor, 0.8)
+        this.sprite.lineBetween(-8, 0, -12, 0)
+        this.sprite.lineBetween(8, 0, 12, 0)
+        this.sprite.lineBetween(0, -8, 0, -12)
+        this.sprite.lineBetween(0, 8, 0, 12)
+        break
+      case 'basic':
+      default:
+        // Draw simple dot for basic tower
+        this.sprite.fillStyle(indicatorColor, 0.8)
+        this.sprite.fillCircle(0, -10, 2)
+        break
+    }
+  }
+
+  private darkenColor(color: number): number {
+    // Simple color darkening - reduce each RGB component
+    const r = Math.max(0, ((color >> 16) & 0xFF) - 40)
+    const g = Math.max(0, ((color >> 8) & 0xFF) - 40)
+    const b = Math.max(0, (color & 0xFF) - 40)
+    return (r << 16) | (g << 8) | b
   }
 
   private createRangeIndicator(): void {
@@ -145,13 +285,18 @@ export default class Tower {
     return (currentTime - this.lastFireTime) >= this.fireRate
   }
 
-  public findTarget(pigeons: Array<{ getPosition(): { x: number, y: number }, isAlive: boolean }>): { x: number, y: number } | null {
+  public findTarget(pigeons: Array<{ 
+    getPosition(): { x: number, y: number }, 
+    isAlive: boolean,
+    getVelocity?(): { x: number, y: number },
+    getPredictedPosition?(timeAhead: number): { x: number, y: number }
+  }>): { x: number, y: number } | null {
     if (!pigeons || pigeons.length === 0) return null
     
     const towerPos = { x: this.sprite.x, y: this.sprite.y }
     
-    // Find the closest pigeon within range
-    let closestPigeon = null
+    // Find the closest pigeon within range with predictive targeting
+    let bestTarget = null
     let closestDistance = Infinity
     
     for (const pigeon of pigeons) {
@@ -165,11 +310,46 @@ export default class Tower {
       
       if (distance <= this.range && distance < closestDistance) {
         closestDistance = distance
-        closestPigeon = pigeonPos
+        
+        // Use predictive targeting if pigeon has velocity info
+        if (pigeon.getVelocity && pigeon.getPredictedPosition) {
+          const velocity = pigeon.getVelocity()
+          const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y)
+          
+          // Only use predictive targeting if pigeon is moving fast enough
+          if (speed > 10) {
+            // Calculate time for projectile to reach current pigeon position
+            const PROJECTILE_SPEED = 450 // pixels per second - matches Projectile.ts
+            const timeToReach = distance / PROJECTILE_SPEED
+            
+            // Get predicted position
+            const predictedPos = pigeon.getPredictedPosition(timeToReach)
+            
+            // Verify predicted position is still in range
+            const predictedDistance = Phaser.Math.Distance.Between(towerPos.x, towerPos.y, predictedPos.x, predictedPos.y)
+            
+            if (predictedDistance <= this.range) {
+              bestTarget = predictedPos
+              console.log(`🎯 Predictive targeting: Current (${pigeonPos.x.toFixed(1)}, ${pigeonPos.y.toFixed(1)}) → Predicted (${predictedPos.x.toFixed(1)}, ${predictedPos.y.toFixed(1)}) in ${timeToReach.toFixed(2)}s`)
+            } else {
+              // If predicted position is out of range, target current position
+              bestTarget = pigeonPos
+              console.log(`⚠️ Predicted position out of range, using current position`)
+            }
+          } else {
+            // Pigeon is stationary, target current position
+            bestTarget = pigeonPos
+            console.log(`🐌 Pigeon moving slowly, targeting current position`)
+          }
+        } else {
+          // No velocity info available, use current position
+          bestTarget = pigeonPos
+          console.log(`📍 No velocity data, targeting current position`)
+        }
       }
     }
     
-    return closestPigeon
+    return bestTarget
   }
 
   public attack(targetPosition: { x: number, y: number }, currentTime: number): void {
@@ -194,15 +374,17 @@ export default class Tower {
       ease: 'Power2'
     })
     
-    // Emit event for projectile creation (next sub-task)
+    // Emit event for projectile creation with projectile color
     this.scene.events.emit('towerFired', {
       tower: this,
       startPosition: { x: this.sprite.x, y: this.sprite.y },
       targetPosition: targetPosition,
-      damage: this.damage
+      damage: this.damage,
+      projectileColor: this.config.projectileColor,
+      towerType: this.towerType
     })
     
-    console.log('Tower fired at target:', targetPosition)
+    console.log(`${this.config.name} fired at target:`, targetPosition, `Damage: ${this.damage}`)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -269,6 +451,80 @@ export default class Tower {
 
   public getLevel(): number {
     return this.level
+  }
+
+  public getTowerType(): string {
+    return this.towerType
+  }
+
+  public getTowerName(): string {
+    return this.config.name
+  }
+
+  public getDescription(): string {
+    return this.config.description
+  }
+
+  public getProjectileColor(): number {
+    return this.config.projectileColor
+  }
+
+  // Static method to get all available tower types
+  public static getAvailableTowerTypes(): TowerConfig[] {
+    return [
+      {
+        id: 'basic',
+        name: 'Basic Tower',
+        description: 'Balanced damage and fire rate',
+        damage: 25,
+        range: 80,
+        fireRate: 1000,
+        cost: 50,
+        color: 0x4A5568,
+        projectileColor: 0xFFD700,
+        maxLevel: 3,
+        upgradeCostMultiplier: 1.5
+      },
+      {
+        id: 'rapidFire',
+        name: 'Rapid-Fire Tower',
+        description: 'Fast firing rate, lower damage',
+        damage: 15,
+        range: 70,
+        fireRate: 400,
+        cost: 75,
+        color: 0xE53E3E,
+        projectileColor: 0xFF6B6B,
+        maxLevel: 3,
+        upgradeCostMultiplier: 1.6
+      },
+      {
+        id: 'heavyDamage',
+        name: 'Heavy Damage Tower',
+        description: 'High damage, slow firing',
+        damage: 60,
+        range: 90,
+        fireRate: 2000,
+        cost: 100,
+        color: 0x553C9A,
+        projectileColor: 0xB794F6,
+        maxLevel: 3,
+        upgradeCostMultiplier: 2.0
+      },
+      {
+        id: 'sniper',
+        name: 'Sniper Tower',
+        description: 'Extreme range, precise shots',
+        damage: 80,
+        range: 150,
+        fireRate: 3000,
+        cost: 150,
+        color: 0x2F855A,
+        projectileColor: 0x48BB78,
+        maxLevel: 3,
+        upgradeCostMultiplier: 2.5
+      }
+    ]
   }
 
   // Static method for placement validation

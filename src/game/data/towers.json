@@ -1,0 +1,54 @@
+{
+  "basic": {
+    "id": "basic",
+    "name": "Basic Tower",
+    "description": "Balanced damage and fire rate",
+    "damage": 25,
+    "range": 80,
+    "fireRate": 1000,
+    "cost": 50,
+    "color": 0x4A5568,
+    "projectileColor": 0xFFD700,
+    "maxLevel": 3,
+    "upgradeCostMultiplier": 1.5
+  },
+  "rapidFire": {
+    "id": "rapidFire",
+    "name": "Rapid-Fire Tower",
+    "description": "Fast firing rate, lower damage",
+    "damage": 15,
+    "range": 70,
+    "fireRate": 400,
+    "cost": 75,
+    "color": 0xE53E3E,
+    "projectileColor": 0xFF6B6B,
+    "maxLevel": 3,
+    "upgradeCostMultiplier": 1.6
+  },
+  "heavyDamage": {
+    "id": "heavyDamage",
+    "name": "Heavy Damage Tower",
+    "description": "High damage, slow firing",
+    "damage": 60,
+    "range": 90,
+    "fireRate": 2000,
+    "cost": 100,
+    "color": 0x553C9A,
+    "projectileColor": 0xB794F6,
+    "maxLevel": 3,
+    "upgradeCostMultiplier": 2.0
+  },
+  "sniper": {
+    "id": "sniper",
+    "name": "Sniper Tower",
+    "description": "Extreme range, precise shots",
+    "damage": 80,
+    "range": 150,
+    "fireRate": 3000,
+    "cost": 150,
+    "color": 0x2F855A,
+    "projectileColor": 0x48BB78,
+    "maxLevel": 3,
+    "upgradeCostMultiplier": 2.5
+  }
+}

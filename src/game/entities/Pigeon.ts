@@ -19,6 +19,8 @@ export default class Pigeon {
   // Movement tracking
   private pathProgress: number = 0
   private isMoving: boolean = true
+  private velocity: { x: number, y: number } = { x: 0, y: 0 }
+  private lastPosition: { x: number, y: number } = { x: 0, y: 0 }
 
   constructor(scene: Phaser.Scene, startX: number = 0, startY: number = 300) {
     this.scene = scene
@@ -31,6 +33,10 @@ export default class Pigeon {
     
     // Create pigeon sprite first
     this.createSprite(startX, startY)
+    
+    // Initialize position tracking
+    this.lastPosition.x = startX
+    this.lastPosition.y = startY
     
     // Enable physics after sprite is created
     this.scene.physics.add.existing(this.sprite)
@@ -154,21 +160,43 @@ export default class Pigeon {
   }
 
   public takeDamage(damage: number): boolean {
-    if (!this.isAlive) return false
+    if (!this.isAlive) {
+      console.log('🚫 Pigeon already dead, no damage applied')
+      return false
+    }
     
-    this.health -= damage
+    // Validate damage value
+    if (typeof damage !== 'number' || damage <= 0) {
+      console.log(`🚫 Invalid damage value: ${damage}`)
+      return false
+    }
+    
+    console.log(`🩸 Pigeon taking ${damage} damage. Health before: ${this.health}`)
+    
+    const oldHealth = this.health
+    this.health = Math.max(0, this.health - damage) // Ensure health doesn't go below 0
     this.updateHealthBar()
     
+    console.log(`🩸 Pigeon health: ${oldHealth} → ${this.health} (damage: ${damage})`)
+    
     // Flash effect when taking damage
-    this.scene.tweens.add({
-      targets: this.sprite,
-      alpha: 0.3,
-      duration: 100,
-      yoyo: true,
-      repeat: 1
-    })
+    if (this.sprite) {
+      this.scene.tweens.add({
+        targets: this.sprite,
+        alpha: 0.3,
+        duration: 100,
+        yoyo: true,
+        repeat: 1,
+        onComplete: () => {
+          if (this.sprite) {
+            this.sprite.alpha = 1 // Ensure alpha is reset
+          }
+        }
+      })
+    }
     
     if (this.health <= 0) {
+      console.log('💀 Pigeon health <= 0, eliminating...')
       this.eliminate()
       return true // Pigeon eliminated
     }
@@ -243,12 +271,22 @@ export default class Pigeon {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public update(_time: number, _delta: number): void {
+  public update(_time: number, delta: number): void {
     if (!this.isAlive || !this.isMoving) return
     
-    // Additional update logic can go here
-    // For now, movement is handled by the path follower
-    // Parameters prefixed with _ to indicate they're intentionally unused
+    // Track velocity for predictive targeting
+    const currentPos = this.getPosition()
+    
+    // Calculate velocity based on position change
+    const deltaTime = delta / 1000 // Convert to seconds
+    if (deltaTime > 0) {
+      this.velocity.x = (currentPos.x - this.lastPosition.x) / deltaTime
+      this.velocity.y = (currentPos.y - this.lastPosition.y) / deltaTime
+    }
+    
+    // Update last position
+    this.lastPosition.x = currentPos.x
+    this.lastPosition.y = currentPos.y
   }
 
   public destroy(): void {
@@ -286,5 +324,17 @@ export default class Pigeon {
 
   public getReward(): number {
     return this.reward
+  }
+
+  public getVelocity(): { x: number, y: number } {
+    return { x: this.velocity.x, y: this.velocity.y }
+  }
+
+  public getPredictedPosition(timeAhead: number): { x: number, y: number } {
+    const currentPos = this.getPosition()
+    return {
+      x: currentPos.x + (this.velocity.x * timeAhead),
+      y: currentPos.y + (this.velocity.y * timeAhead)
+    }
   }
 }

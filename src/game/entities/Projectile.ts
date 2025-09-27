@@ -5,13 +5,13 @@ export default class Projectile {
   
   // Projectile properties
   public damage: number
-  public speed: number = 300 // pixels per second
+  public speed: number = 450 // pixels per second - increased for better hit rates
   public isActive: boolean = true
   private maxDistance: number = 400 // Max travel distance before self-destruct
   
   // Visual properties
   private readonly PROJECTILE_SIZE = 4
-  private readonly PROJECTILE_COLOR = 0xFFD700 // Gold color
+  private projectileColor: number = 0xFFD700 // Default gold color
   
   // Movement tracking
   private startPosition: { x: number, y: number }
@@ -25,12 +25,18 @@ export default class Projectile {
     startY: number, 
     targetX: number, 
     targetY: number, 
-    damage: number
+    damage: number,
+    color?: number
   ) {
     this.scene = scene
     this.damage = damage
     this.startPosition = { x: startX, y: startY }
     this.targetPosition = { x: targetX, y: targetY }
+    
+    // Set projectile color
+    if (color !== undefined) {
+      this.projectileColor = color
+    }
     
     // Calculate velocity vector first
     this.calculateVelocity()
@@ -69,11 +75,11 @@ export default class Projectile {
     }
     
     // Draw main projectile body
-    this.sprite.fillStyle(this.PROJECTILE_COLOR, 1)
+    this.sprite.fillStyle(this.projectileColor, 1)
     this.sprite.fillCircle(0, 0, this.PROJECTILE_SIZE)
     
     // Draw projectile glow effect
-    this.sprite.fillStyle(this.PROJECTILE_COLOR, 0.3)
+    this.sprite.fillStyle(this.projectileColor, 0.3)
     this.sprite.fillCircle(0, 0, this.PROJECTILE_SIZE * 1.5)
     
     // Draw directional streak
@@ -82,7 +88,7 @@ export default class Projectile {
     const streakEndX = -Math.cos(angle) * streakLength
     const streakEndY = -Math.sin(angle) * streakLength
     
-    this.sprite.lineStyle(2, this.PROJECTILE_COLOR, 0.8)
+    this.sprite.lineStyle(2, this.projectileColor, 0.8)
     this.sprite.lineBetween(0, 0, streakEndX, streakEndY)
   }
 

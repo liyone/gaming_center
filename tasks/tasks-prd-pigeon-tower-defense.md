@@ -11,14 +11,14 @@ Each milestone builds a **playable game** that you can test and validate before 
 - `package.json` - ✅ Added Phaser.js dependency (v3.85.2)
 - `src/app/game/page.tsx` - ✅ Main game page component with beautiful UI and Phaser integration
 - `src/components/Game/PhaserGame.tsx` - ✅ React wrapper for Phaser game instance with proper cleanup and GameScene integration
-- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with pigeon spawning, tower placement, projectile management, collision detection, and complete combat system
+- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with pigeon spawning, visual tower selection UI, tower type selection (Q/1-4 keys), placement system, projectile management, collision detection, and complete combat system
 - `src/game/entities/Pigeon.ts` - ✅ Pigeon entity class with curved path movement, health system, damage handling, and visual effects
-- `src/game/entities/Tower.ts` - ✅ Tower entity class with click placement, range visualization, targeting system, and projectile firing
+- `src/game/entities/Tower.ts` - ✅ Tower entity class with 4 tower types, click placement, range visualization, targeting system, and color-coded projectiles
 - `src/game/entities/Projectile.ts` - ✅ Projectile entity with physics movement, collision detection, visual effects, and damage application
 - `src/game/scenes/MenuScene.ts` - Menu and card collection scenes
 - `src/game/systems/WaveManager.ts` - Wave spawning and difficulty progression
 - `src/game/systems/CardSystem.ts` - Card collection and gacha mechanics
-- `src/game/data/towers.json` - Tower definitions and stats
+- `src/game/data/towers.json` - ✅ Tower type definitions with stats, costs, and visual properties for 4 tower types
 - `src/game/data/cards.json` - Card definitions and rarity data
 - `src/hooks/useGameState.ts` - React hook for game state management
 - `src/utils/localStorage.ts` - Save/load game progress utilities
@@ -31,10 +31,15 @@ Each milestone builds a **playable game** that you can test and validate before 
 - Use `npm install phaser` to add the game engine dependency
 - Test each MVP thoroughly before proceeding to ensure core mechanics are fun
 - Consider using sprite atlases for optimized loading and performance
+- **User Feedback Enhancement:** Added visual tower selection UI to replace fast-refreshing text for better user experience
+- **Bug Fixes:** Fixed tower damage not applying, increased starting coins to 300, fixed number keys 1-4 for tower selection
+- **UX Improvements:** Completely redesigned tower placement preview system with intuitive visual feedback, clear validation, and realistic tower previews
+- **TypeScript Fixes:** Resolved all compilation errors with proper interface definitions and null safety checks
+- **Damage System Fixes:** Enhanced projectile-pigeon collision detection with better tracking, validation, and comprehensive debugging
 
 ## Tasks
 
-- [ ] **MVP 1.0: Core Proof of Concept** *(Validate: "Is shooting pigeons fun?")*
+- [x] **MVP 1.0: Core Proof of Concept** *(Validate: "Is shooting pigeons fun?")*
   - [x] 1.1 Install Phaser.js and configure Next.js integration
   - [x] 1.2 Create basic game page and Phaser wrapper component
   - [x] 1.3 Set up main game scene with canvas and basic rendering
@@ -44,18 +49,18 @@ Each milestone builds a **playable game** that you can test and validate before 
   - [x] 1.7 Add collision detection between projectiles and pigeons
   - [x] 1.8 Add simple scoring when pigeons are eliminated
   - [x] 1.9 Create basic game over condition when pigeons reach end
-  - [ ] 1.10 Test and validate: Is the core shooting mechanic satisfying?
+  - [x] 1.10 Test and validate: Is the core shooting mechanic satisfying?
 
 - [ ] **MVP 2.0: Enhanced Tower Defense** *(Validate: "Is the strategy engaging?")*
-  - [ ] 2.1 Create pigeon path system with waypoints and curved movement
+  - [x] 2.1 Create pigeon path system with waypoints and curved movement
   - [ ] 2.2 Implement wave spawning system with multiple pigeons
-  - [ ] 2.3 Add currency system - earn coins for eliminating pigeons
-  - [ ] 2.4 Create multiple tower types (basic, rapid-fire, heavy damage)
+  - [x] 2.3 Add currency system - earn coins for eliminating pigeons
+  - [x] 2.4 Create multiple tower types (basic, rapid-fire, heavy damage)
   - [ ] 2.5 Implement tower upgrade system using currency
   - [ ] 2.6 Add different pigeon types with varying health/speed
-  - [ ] 2.7 Implement player health system (lose health when pigeons escape)
+  - [x] 2.7 Implement player health system (lose health when pigeons escape)
   - [ ] 2.8 Create wave progression with increasing difficulty
-  - [ ] 2.9 Add basic HUD showing health, currency, wave number
+  - [x] 2.9 Add basic HUD showing health, currency, wave number
   - [ ] 2.10 Test and validate: Is the strategic gameplay engaging?
 
 - [ ] **MVP 3.0: Card Collection System** *(Validate: "Is collecting cards addictive?")*
