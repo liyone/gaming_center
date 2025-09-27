@@ -27,6 +27,12 @@ export default class Tower {
   public towerType: string
   private config: TowerConfig
   
+  // Upgrade tracking
+  public damageLevel: number = 0
+  public rangeLevel: number = 0
+  public fireRateLevel: number = 0
+  private maxUpgradeLevel: number = 3
+  
   // Visual properties
   private readonly TOWER_SIZE = 16
   private readonly RANGE_COLOR = 0x68D391 // Light green
@@ -170,15 +176,50 @@ export default class Tower {
     // Draw tower type indicator based on type
     this.drawTowerTypeIndicator()
     
-    // Draw level indicator
-    if (this.level > 1) {
-      this.sprite.fillStyle(0xF7FAFC, 1) // White
+    // Draw upgrade indicators around the tower
+    if (this.damageLevel > 0) {
+      // Red spikes for damage upgrades
+      this.sprite.fillStyle(0xFF4444, 0.8)
+      for (let i = 0; i < this.damageLevel; i++) {
+        const angle = (Math.PI * 2 / 3) * i - Math.PI / 2
+        const x = Math.cos(angle) * 18
+        const y = Math.sin(angle) * 18
+        this.sprite.fillTriangle(x, y, x - 3, y + 6, x + 3, y + 6)
+      }
+    }
+    
+    if (this.rangeLevel > 0) {
+      // Blue circles for range upgrades
+      this.sprite.lineStyle(1, 0x4444FF, 0.6)
+      for (let i = 0; i < this.rangeLevel; i++) {
+        this.sprite.strokeCircle(0, 0, this.TOWER_SIZE + 4 + (i * 3))
+      }
+    }
+    
+    if (this.fireRateLevel > 0) {
+      // Yellow lightning bolts for fire rate upgrades
+      this.sprite.fillStyle(0xFFFF44, 0.8)
+      for (let i = 0; i < this.fireRateLevel; i++) {
+        const angle = (Math.PI * 2 / 3) * i + Math.PI / 6
+        const x = Math.cos(angle) * 20
+        const y = Math.sin(angle) * 20
+        // Simple lightning bolt shape
+        this.sprite.fillTriangle(x, y - 3, x - 2, y + 3, x + 2, y + 3)
+      }
+    }
+
+    // Draw central level indicator if any upgrades
+    const totalUpgrades = this.damageLevel + this.rangeLevel + this.fireRateLevel
+    if (totalUpgrades > 0) {
+      this.sprite.fillStyle(0xFFD700, 1) // Gold
       this.sprite.fillCircle(0, 0, 6)
+      this.sprite.fillStyle(0x000000, 1) // Black text
       
-      // Draw level number
-      const levelText = this.scene.add.text(this.sprite.x, this.sprite.y, this.level.toString(), {
-        fontSize: '10px',
-        color: '#000000'
+      // Simple level display (total upgrade count)
+      const levelText = this.scene.add.text(this.sprite.x, this.sprite.y, totalUpgrades.toString(), {
+        fontSize: '8px',
+        color: '#000000',
+        fontStyle: 'bold'
       }).setOrigin(0.5)
       
       // Remove level text after a short delay to prevent memory leaks
@@ -393,22 +434,6 @@ export default class Tower {
     // For now, towers are stationary and attack logic is handled by GameScene
   }
 
-  public upgrade(): boolean {
-    // Simple upgrade system
-    if (this.level >= 3) return false // Max level
-    
-    this.level++
-    this.damage += 10
-    this.range += 10
-    this.fireRate = Math.max(500, this.fireRate - 100) // Faster firing, min 500ms
-    
-    // Update visual
-    this.updateSprite()
-    this.createRangeIndicator() // Recreate with new range
-    
-    console.log('Tower upgraded to level', this.level)
-    return true
-  }
 
   public destroy(): void {
     console.log('Destroying tower')
@@ -445,6 +470,10 @@ export default class Tower {
     return this.damage
   }
 
+  public getFireRate(): number {
+    return this.fireRate
+  }
+
   public getCost(): number {
     return this.cost
   }
@@ -467,6 +496,96 @@ export default class Tower {
 
   public getProjectileColor(): number {
     return this.config.projectileColor
+  }
+
+  // Upgrade system methods
+  public canUpgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean {
+    switch (upgradeType) {
+      case 'damage':
+        return this.damageLevel < this.maxUpgradeLevel
+      case 'range':
+        return this.rangeLevel < this.maxUpgradeLevel
+      case 'fireRate':
+        return this.fireRateLevel < this.maxUpgradeLevel
+      default:
+        return false
+    }
+  }
+
+  public getUpgradeCost(upgradeType: 'damage' | 'range' | 'fireRate'): number {
+    const currentLevel = this.getUpgradeLevel(upgradeType)
+    const baseCost = Math.floor(this.config.cost * 0.75) // 75% of original tower cost
+    return Math.floor(baseCost * Math.pow(1.5, currentLevel)) // Exponential cost increase
+  }
+
+  public getUpgradeLevel(upgradeType: 'damage' | 'range' | 'fireRate'): number {
+    switch (upgradeType) {
+      case 'damage':
+        return this.damageLevel
+      case 'range':
+        return this.rangeLevel
+      case 'fireRate':
+        return this.fireRateLevel
+      default:
+        return 0
+    }
+  }
+
+  public upgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean {
+    if (!this.canUpgrade(upgradeType)) return false
+
+    const upgradeBonus = 0.25 // 25% improvement per level
+
+    switch (upgradeType) {
+      case 'damage':
+        this.damageLevel++
+        this.damage = Math.floor(this.config.damage * (1 + upgradeBonus * this.damageLevel))
+        break
+      case 'range':
+        this.rangeLevel++
+        this.range = Math.floor(this.config.range * (1 + upgradeBonus * this.rangeLevel))
+        break
+      case 'fireRate':
+        this.fireRateLevel++
+        this.fireRate = Math.max(200, Math.floor(this.config.fireRate * (1 - upgradeBonus * this.fireRateLevel * 0.5))) // Faster = lower number
+        break
+    }
+
+    // Update visual level
+    this.level = 1 + this.damageLevel + this.rangeLevel + this.fireRateLevel
+    this.updateSprite()
+
+    console.log(`🔧 Tower upgraded! ${upgradeType} level ${this.getUpgradeLevel(upgradeType)}`)
+    return true
+  }
+
+  public getUpgradeInfo(): { 
+    damage: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
+    range: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
+    fireRate: { level: number, cost: number, canUpgrade: boolean, nextValue: number }
+  } {
+    const upgradeBonus = 0.25
+
+    return {
+      damage: {
+        level: this.damageLevel,
+        cost: this.getUpgradeCost('damage'),
+        canUpgrade: this.canUpgrade('damage'),
+        nextValue: Math.floor(this.config.damage * (1 + upgradeBonus * (this.damageLevel + 1)))
+      },
+      range: {
+        level: this.rangeLevel,
+        cost: this.getUpgradeCost('range'),
+        canUpgrade: this.canUpgrade('range'),
+        nextValue: Math.floor(this.config.range * (1 + upgradeBonus * (this.rangeLevel + 1)))
+      },
+      fireRate: {
+        level: this.fireRateLevel,
+        cost: this.getUpgradeCost('fireRate'),
+        canUpgrade: this.canUpgrade('fireRate'),
+        nextValue: Math.max(200, Math.floor(this.config.fireRate * (1 - upgradeBonus * (this.fireRateLevel + 1) * 0.5)))
+      }
+    }
   }
 
   // Static method to get all available tower types

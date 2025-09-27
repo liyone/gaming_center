@@ -11,9 +11,9 @@ Each milestone builds a **playable game** that you can test and validate before 
 - `package.json` - ✅ Added Phaser.js dependency (v3.85.2)
 - `src/app/game/page.tsx` - ✅ Main game page component with beautiful UI and Phaser integration
 - `src/components/Game/PhaserGame.tsx` - ✅ React wrapper for Phaser game instance with proper cleanup and GameScene integration
-- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with wave spawning system, visual tower selection UI, tower type selection (Q/1-4 keys), placement system, projectile management, collision detection, predictive targeting, and complete combat system
+- `src/game/scenes/GameScene.ts` - ✅ Main gameplay scene with wave spawning system, visual tower selection UI, tower type selection (Q/1-4 keys), placement system, tower upgrade interface, projectile management, collision detection, predictive targeting, and complete combat system
 - `src/game/entities/Pigeon.ts` - ✅ Pigeon entity class with curved path movement, health system, damage handling, and visual effects
-- `src/game/entities/Tower.ts` - ✅ Tower entity class with 4 tower types, click placement, range visualization, targeting system, and color-coded projectiles
+- `src/game/entities/Tower.ts` - ✅ Tower entity class with 4 tower types, click placement, range visualization, targeting system, color-coded projectiles, and complete upgrade system with visual indicators
 - `src/game/entities/Projectile.ts` - ✅ Projectile entity with physics movement, collision detection, visual effects, and damage application
 - `src/game/scenes/MenuScene.ts` - Menu and card collection scenes
 - `src/game/systems/WaveManager.ts` - Wave spawning and difficulty progression
@@ -38,6 +38,7 @@ Each milestone builds a **playable game** that you can test and validate before 
 - **Damage System Fixes:** Enhanced projectile-pigeon collision detection with better tracking, validation, and comprehensive debugging
 - **Predictive Targeting:** Implemented intelligent targeting system that predicts pigeon movement for accurate projectile hits
 - **Wave System:** Implemented structured wave spawning with increasing difficulty, wave bonuses, animated notifications, and manual skip functionality
+- **Tower Upgrade System:** Complete upgrade system with 3 upgrade paths (damage, range, fire rate), exponential cost scaling, interactive UI, and visual upgrade indicators
 
 ## Tasks
 
@@ -58,7 +59,7 @@ Each milestone builds a **playable game** that you can test and validate before 
   - [x] 2.2 Implement wave spawning system with multiple pigeons
   - [x] 2.3 Add currency system - earn coins for eliminating pigeons
   - [x] 2.4 Create multiple tower types (basic, rapid-fire, heavy damage)
-  - [ ] 2.5 Implement tower upgrade system using currency
+  - [x] 2.5 Implement tower upgrade system using currency
   - [ ] 2.6 Add different pigeon types with varying health/speed
   - [x] 2.7 Implement player health system (lose health when pigeons escape)
   - [x] 2.8 Create wave progression with increasing difficulty

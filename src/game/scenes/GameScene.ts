@@ -18,6 +18,7 @@ interface ITower {
   getBounds(): Phaser.Geom.Rectangle
   getRange(): number
   getDamage(): number
+  getFireRate(): number
   getCost(): number
   getTowerType(): string
   getTowerName(): string
@@ -26,6 +27,14 @@ interface ITower {
   findTarget(pigeons: IPigeon[]): { x: number, y: number } | null
   attack(targetPosition: { x: number, y: number }, currentTime: number): void
   canAttack(currentTime: number): boolean
+  canUpgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean
+  getUpgradeCost(upgradeType: 'damage' | 'range' | 'fireRate'): number
+  upgrade(upgradeType: 'damage' | 'range' | 'fireRate'): boolean
+  getUpgradeInfo(): { 
+    damage: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
+    range: { level: number, cost: number, canUpgrade: boolean, nextValue: number },
+    fireRate: { level: number, cost: number, canUpgrade: boolean, nextValue: number }
+  }
 }
 
 // Interface for placement validation
@@ -87,6 +96,13 @@ export default class GameScene extends Phaser.Scene {
   private towerSelectorIcons: Phaser.GameObjects.Graphics[] = []
   private towerSelectorTexts: Phaser.GameObjects.Text[] = []
   private selectedIndicator: Phaser.GameObjects.Graphics | null = null
+  
+  // Tower upgrade UI
+  private upgradePanel: Phaser.GameObjects.Graphics | null = null
+  private upgradeTexts: Phaser.GameObjects.Text[] = []
+  private upgradeButtons: Phaser.GameObjects.Graphics[] = []
+  private selectedTower: ITower | null = null
+  private isUpgradeMenuOpen: boolean = false
   
   // Game world properties
   private readonly WORLD_WIDTH = 800
@@ -277,7 +293,7 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5)
     
     // Initialize simple status
-    this.statusText.setText('Wave System Active! Press T to place towers | SPACE to skip waves | Hover towers to see range')
+    this.statusText.setText('Wave System Active! Click towers to upgrade | Press T to place | SPACE to skip waves')
     
     // Game stats UI
     const gameStatsText = this.add.text(10, 10, '', {
@@ -313,7 +329,7 @@ export default class GameScene extends Phaser.Scene {
     })
     
     // Debug info
-    this.add.text(10, 180, 'MVP 2.0 - Enhanced Tower Defense\nWave System & Predictive Targeting', {
+    this.add.text(10, 180, 'MVP 2.0+ - Enhanced Tower Defense\nWave System, Upgrades & Predictive Targeting', {
       fontSize: '12px',
       color: '#ffffff',
       backgroundColor: '#000000',
@@ -553,11 +569,15 @@ export default class GameScene extends Phaser.Scene {
       })
     }
     
-    // Add ESC key to cancel tower placement
+    // Add ESC key to cancel tower placement or close upgrade menu
     const escKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
     if (escKey) {
       escKey.on('down', () => {
-        this.cancelTowerPlacement()
+        if (this.isUpgradeMenuOpen) {
+          this.closeUpgradeMenu()
+        } else {
+          this.cancelTowerPlacement()
+        }
       })
     }
     
@@ -603,6 +623,19 @@ export default class GameScene extends Phaser.Scene {
       return
     }
     
+    // Check if clicking on a tower for upgrades
+    const clickedTower = this.findTowerAtPosition(x, y)
+    if (clickedTower) {
+      this.selectTowerForUpgrade(clickedTower)
+      return
+    }
+    
+    // Close upgrade menu if clicking elsewhere
+    if (this.isUpgradeMenuOpen) {
+      this.closeUpgradeMenu()
+      return
+    }
+    
     // Visual feedback for regular clicks
     const clickEffect = this.add.graphics()
     clickEffect.lineStyle(3, 0xFFFF00, 1) // Yellow circle
@@ -619,9 +652,20 @@ export default class GameScene extends Phaser.Scene {
     })
     
     // Update status
-    this.statusText.setText(`Clicked at (${Math.round(x)}, ${Math.round(y)}) - Press T to place towers!`)
+    this.statusText.setText(`Click towers to upgrade them! Press T to place new towers.`)
     
     console.log('GameScene: Click detected at', x, y)
+  }
+
+  private findTowerAtPosition(x: number, y: number): ITower | null {
+    for (const tower of this.towers) {
+      const towerPos = tower.getPosition()
+      const distance = Phaser.Math.Distance.Between(x, y, towerPos.x, towerPos.y)
+      if (distance <= 20) { // 20px click radius around tower
+        return tower
+      }
+    }
+    return null
   }
 
   private handleMouseMove(x: number, y: number): void {
@@ -647,6 +691,9 @@ export default class GameScene extends Phaser.Scene {
 
   private startTowerPlacement(): void {
     console.log('Starting tower placement mode')
+    
+    // Close upgrade menu if open
+    this.closeUpgradeMenu()
     
     // Create placement preview
     this.placementPreview = this.add.graphics()
@@ -851,6 +898,145 @@ export default class GameScene extends Phaser.Scene {
     this.statusText.setText(`${tower.getTowerName()} placed! (-${towerCost} coins, ${this.coins} remaining)`)
     
     console.log('Tower placed at', x, y, 'Cost:', towerCost)
+  }
+
+  private selectTowerForUpgrade(tower: ITower): void {
+    this.selectedTower = tower
+    this.showUpgradeMenu()
+    this.statusText.setText(`${tower.getTowerName()} selected - Choose upgrade or click elsewhere to close`)
+  }
+
+  private showUpgradeMenu(): void {
+    if (!this.selectedTower) return
+    
+    this.closeUpgradeMenu() // Close any existing menu
+    this.isUpgradeMenuOpen = true
+    
+    const towerPos = this.selectedTower.getPosition()
+    const upgradeInfo = this.selectedTower.getUpgradeInfo()
+    
+    // Create upgrade panel
+    this.upgradePanel = this.add.graphics()
+    this.upgradePanel.fillStyle(0x1A202C, 0.95)
+    this.upgradePanel.lineStyle(2, 0x4A5568, 1)
+    this.upgradePanel.fillRoundedRect(towerPos.x - 100, towerPos.y - 120, 200, 180, 8)
+    this.upgradePanel.strokeRoundedRect(towerPos.x - 100, towerPos.y - 120, 200, 180, 8)
+    
+    // Tower name header
+    const headerText = this.add.text(towerPos.x, towerPos.y - 100, this.selectedTower.getTowerName(), {
+      fontSize: '14px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    }).setOrigin(0.5)
+    this.upgradeTexts.push(headerText)
+    
+    // Current stats
+    const statsText = this.add.text(towerPos.x, towerPos.y - 85, 
+      `Damage: ${this.selectedTower.getDamage()} | Range: ${this.selectedTower.getRange()} | Rate: ${this.selectedTower.getFireRate()}ms`, {
+      fontSize: '10px',
+      color: '#A0AEC0'
+    }).setOrigin(0.5)
+    this.upgradeTexts.push(statsText)
+    
+    // Create upgrade buttons
+    const upgradeTypes: Array<'damage' | 'range' | 'fireRate'> = ['damage', 'range', 'fireRate']
+    const upgradeLabels = ['💥 Damage', '🎯 Range', '⚡ Speed']
+    
+    upgradeTypes.forEach((upgradeType, index) => {
+      const info = upgradeInfo[upgradeType]
+      const buttonY = towerPos.y - 50 + (index * 30)
+      
+      // Create upgrade button
+      const button = this.add.graphics()
+      const canAfford = this.coins >= info.cost
+      const canUpgrade = info.canUpgrade && canAfford
+      
+      const buttonColor = canUpgrade ? 0x38A169 : 0x4A5568
+      const textColor = canUpgrade ? '#ffffff' : '#A0AEC0'
+      
+      button.fillStyle(buttonColor, 1)
+      button.lineStyle(1, 0x2D3748, 1)
+      button.fillRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
+      button.strokeRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
+      
+      if (canUpgrade) {
+        button.setInteractive(new Phaser.Geom.Rectangle(towerPos.x - 90, buttonY - 8, 180, 16), Phaser.Geom.Rectangle.Contains)
+        button.on('pointerdown', () => this.purchaseUpgrade(upgradeType))
+        button.on('pointerover', () => {
+          button.clear()
+          button.fillStyle(0x48BB78, 1)
+          button.lineStyle(1, 0x2D3748, 1)
+          button.fillRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
+          button.strokeRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
+        })
+        button.on('pointerout', () => {
+          button.clear()
+          button.fillStyle(0x38A169, 1)
+          button.lineStyle(1, 0x2D3748, 1)
+          button.fillRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
+          button.strokeRoundedRect(towerPos.x - 90, buttonY - 8, 180, 16, 4)
+        })
+      }
+      
+      this.upgradeButtons.push(button)
+      
+      // Button text
+      const buttonText = info.canUpgrade 
+        ? `${upgradeLabels[index]} Lv.${info.level + 1} - ${info.cost}c (${info.nextValue})`
+        : `${upgradeLabels[index]} MAX`
+      
+      const text = this.add.text(towerPos.x, buttonY, buttonText, {
+        fontSize: '10px',
+        color: textColor
+      }).setOrigin(0.5)
+      this.upgradeTexts.push(text)
+    })
+    
+    // Close instruction
+    const closeText = this.add.text(towerPos.x, towerPos.y + 50, 'Click elsewhere to close', {
+      fontSize: '9px',
+      color: '#718096'
+    }).setOrigin(0.5)
+    this.upgradeTexts.push(closeText)
+  }
+
+  private closeUpgradeMenu(): void {
+    this.isUpgradeMenuOpen = false
+    this.selectedTower = null
+    
+    // Destroy upgrade UI elements
+    if (this.upgradePanel) {
+      this.upgradePanel.destroy()
+      this.upgradePanel = null
+    }
+    
+    this.upgradeTexts.forEach(text => text.destroy())
+    this.upgradeTexts = []
+    
+    this.upgradeButtons.forEach(button => button.destroy())
+    this.upgradeButtons = []
+  }
+
+  private purchaseUpgrade(upgradeType: 'damage' | 'range' | 'fireRate'): void {
+    if (!this.selectedTower) return
+    
+    const cost = this.selectedTower.getUpgradeCost(upgradeType)
+    
+    if (this.coins >= cost && this.selectedTower.canUpgrade(upgradeType)) {
+      // Deduct coins
+      this.coins -= cost
+      
+      // Apply upgrade
+      const success = this.selectedTower.upgrade(upgradeType)
+      
+      if (success) {
+        console.log(`🔧 Purchased ${upgradeType} upgrade for ${cost} coins`)
+        this.statusText.setText(`${upgradeType} upgraded! (-${cost} coins)`)
+        
+        // Refresh the upgrade menu
+        this.showUpgradeMenu()
+      }
+    }
   }
 
   private cycleTowerType(): void {
